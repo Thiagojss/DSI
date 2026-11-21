@@ -10,16 +10,17 @@ from sqlalchemy import select, or_, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from database import Base, engine, SessionLocal, migrate_schema
-from models import Product, PriceHistory, PriceAlert, CollectionSession
+from models import Product, PriceHistory, PriceAlert, CollectionSession, CostScenario
 from collectors.aliexpress import normalize_product
 from analyzers.scoring import assess_data_quality
 from fx import get_rate_to_brl
 from dashboard import dashboard_page
+from services.costs import CostInputs, analyze_costs
 
 migrate_schema()
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="0.8.1")
+app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="0.11.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
@@ -40,6 +41,10 @@ class ProductIn(BaseModel):
     price_min: Optional[float] = Field(default=None, ge=0)
     price_max: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, pattern=r"^[A-Z]{3}$")
+    original_price: Optional[float] = Field(default=None, ge=0)
+    discount_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    shipping_text: Optional[str] = Field(default=None, max_length=160)
+    delivery_text: Optional[str] = Field(default=None, max_length=160)
     rating: Optional[float] = Field(default=None, ge=0, le=5)
     review_count: Optional[int] = Field(default=None, ge=0)
     orders_count: Optional[int] = Field(default=None, ge=0)
@@ -65,9 +70,14 @@ def serialize_product(p: Product):
     converted_max = round(float(p.price_max) * fx["rate"], 2) if p.price_max is not None and fx else None
     return {
         "id": p.id, "source": p.source, "source_product_id": p.source_product_id,
-        "title": p.title, "category": p.category, "category_path": category_path,
+        "title": p.manual_title or p.title, "source_title": p.title,
+        "category": p.manual_category or p.category, "source_category": p.category,
+        "manual_title": p.manual_title, "manual_category": p.manual_category,
+        "border_color": p.border_color, "category_path": category_path,
         "url": p.url, "image_url": p.image_url,
         "price": p.price, "price_min": p.price_min, "price_max": p.price_max,
+        "original_price": p.original_price, "discount_percent": p.discount_percent,
+        "shipping_text": p.shipping_text, "delivery_text": p.delivery_text,
         "currency": p.currency, "price_brl": converted, "price_min_brl": converted_min, "price_max_brl": converted_max,
         "fx_rate_to_brl": fx["rate"] if fx else None, "fx_date": fx["date"] if fx else None,
         "fx_source": fx["source"] if fx else None, "fx_is_fallback": fx["is_fallback"] if fx else False, "rating": p.rating, "review_count": p.review_count,
@@ -140,7 +150,7 @@ def dashboard():
 def health():
     with SessionLocal() as db:
         db.execute(select(1))
-    return {"status": "ok", "service": "dsi-api", "version": "0.8.1", "database": "connected"}
+    return {"status": "ok", "service": "dsi-api", "version": "0.11.0", "database": "connected"}
 
 
 def prepare_product_values(payload: ProductIn) -> dict:
@@ -162,15 +172,32 @@ def upsert_product(db, payload: ProductIn) -> tuple[Product, bool]:
         or_(Product.source_product_id == values["source_product_id"], Product.url == values["url"])
     ))
     if existing:
+        # Capturas de listagem são parciais. Um campo ausente não destrói dado
+        # antes observado na página individual (nem a moeda escolhida manualmente).
         for key, value in values.items():
+            if key in {"data_quality", "capture_warnings"}:
+                continue
+            if value is None or (key == "category_path" and value == "[]"):
+                continue
+            if key in {"price", "original_price"} and values.get("currency") is None:
+                continue  # não associar preço de moeda desconhecida à moeda antiga
             setattr(existing, key, value)
+        # A completude deve refletir o registro consolidado, não só a última coleta.
+        consolidated = {field: getattr(existing, field) for field in
+                        ("title", "source_product_id", "url", "image_url", "price",
+                         "price_min", "currency", "rating", "review_count", "orders_count",
+                         "seller_name", "category")}
+        quality = assess_data_quality(consolidated)
+        existing.data_quality = quality["data_quality"]
+        existing.capture_warnings = json.dumps(quality["missing_fields"], ensure_ascii=False)
         existing.updated_at = datetime.now(timezone.utc)
         product, updated = existing, True
     else:
         product, updated = Product(**values), False
         db.add(product)
     db.flush()
-    record_price_observation(db, product, values["collected_at"])
+    if (values.get("price") is not None or values.get("price_min") is not None) and values.get("currency"):
+        record_price_observation(db, product, values["collected_at"])
     return product, updated
 
 
@@ -194,9 +221,9 @@ def list_products(limit: int = Query(default=100, ge=1, le=500), category: Optio
     with SessionLocal() as db:
         query = select(Product)
         if category:
-            query = query.where(Product.category == category)
+            query = query.where(func.coalesce(Product.manual_category, Product.category) == category)
         if search:
-            query = query.where(Product.title.ilike(f"%{search[:100]}%"))
+            query = query.where(or_(Product.title.ilike(f"%{search[:100]}%"), Product.manual_title.ilike(f"%{search[:100]}%")))
         if sort == "rating": query = query.order_by(Product.rating.desc().nullslast())
         elif sort == "quality": query = query.order_by(Product.data_quality.desc())
         else: query = query.order_by(Product.created_at.desc())
@@ -209,6 +236,16 @@ def list_products(limit: int = Query(default=100, ge=1, le=500), category: Optio
                 (item["price_brl"] or 0) * direction,
             ))
         return serialized[:limit]
+
+
+@app.get("/intelligence/radar")
+def intelligence_radar(limit: int = Query(default=2000, ge=1, le=5000)):
+    """Dados observados para comparação por categoria. Sem índice comercial inventado."""
+    with SessionLocal() as db:
+        total = db.scalar(select(func.count(Product.id))) or 0
+        rows = db.scalars(select(Product).order_by(desc(Product.updated_at), desc(Product.id)).limit(limit)).all()
+        return {"total_catalog": total, "returned": len(rows), "truncated": total > len(rows),
+                "products": [serialize_product(p) for p in rows]}
 
 
 class CollectionBatchIn(BaseModel):
@@ -263,8 +300,38 @@ def list_collection_sessions(limit: int = Query(default=30, ge=1, le=100)):
 @app.get("/categories")
 def list_categories():
     with SessionLocal() as db:
-        products = db.scalars(select(Product.category).where(Product.category.is_not(None)).distinct().order_by(Product.category)).all()
+        effective = func.coalesce(Product.manual_category, Product.category)
+        products = db.scalars(select(effective).where(effective.is_not(None)).distinct().order_by(effective)).all()
         return [{"name": name} for name in products]
+
+
+class ProductOrganizationIn(BaseModel):
+    """Dados do usuário, independentes dos atributos do anúncio."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+    manual_title: Optional[str] = Field(default=None, max_length=180)
+    manual_category: Optional[str] = Field(default=None, max_length=120)
+    border_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+    @field_validator("manual_title", "manual_category")
+    @classmethod
+    def normalize_optional_label(cls, value):
+        return value or None
+
+
+@app.put("/products/{product_id}/organization")
+def update_product_organization(product_id: int, payload: ProductOrganizationIn):
+    """Substitui personalização do usuário; null restaura o valor capturado."""
+    with SessionLocal() as db:
+        product = db.get(Product, product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        product.manual_title = payload.manual_title
+        product.manual_category = payload.manual_category
+        product.border_color = payload.border_color.lower() if payload.border_color else None
+        product.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(product)
+        return serialize_product(product)
 
 
 class FavoriteUpdate(BaseModel):
@@ -310,8 +377,8 @@ def stats():
         priced = db.scalar(select(func.count(Product.id)).where(Product.price.is_not(None))) or 0
         with_currency = db.scalar(select(func.count(Product.id)).where(Product.currency.is_not(None))) or 0
         categories = dict(db.execute(
-            select(func.coalesce(Product.category, "Sem categoria"), func.count(Product.id))
-            .group_by(func.coalesce(Product.category, "Sem categoria"))
+            select(func.coalesce(Product.manual_category, Product.category, "Sem categoria"), func.count(Product.id))
+            .group_by(func.coalesce(Product.manual_category, Product.category, "Sem categoria"))
         ).all())
         groups = db.execute(
             select(Product.currency, func.sum(Product.price), func.count(Product.id))
@@ -423,3 +490,55 @@ def monitoring_summary():
         return {"products_with_history": monitored_count, "observations": history_count,
                 "unread_alerts": unread_count, "monitoring_mode": "capture_based",
                 "note": "O histórico é atualizado quando um produto é capturado novamente pela extensão."}
+
+
+def cost_row(db, product, scenario):
+    inputs = CostInputs.model_validate_json(scenario.inputs_json)
+    observed = serialize_product(product)
+    result = analyze_costs(inputs, observed['price_brl'], observed['fx_is_fallback'])
+    return {'product_id': product.id, 'title': product.manual_title or product.title, 'category': product.manual_category or product.category or 'Sem categoria',
+            'seller_name': product.seller_name, 'url': product.url,
+            'fx_source': observed['fx_source'], 'fx_date': observed['fx_date'],
+            'inputs': inputs.model_dump(), 'analysis': result,
+            'updated_at': scenario.updated_at.isoformat() if scenario.updated_at else None}
+
+
+@app.get("/products/{product_id}/cost-analysis")
+def get_cost_analysis(product_id: int):
+    with SessionLocal() as db:
+        product = db.get(Product, product_id)
+        if not product: raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        scenario = db.scalar(select(CostScenario).where(CostScenario.product_id == product_id))
+        if scenario: return cost_row(db, product, scenario)
+        observed = serialize_product(product)
+        inputs = CostInputs()
+        return {'product_id': product.id, 'title': product.manual_title or product.title, 'category': product.manual_category or product.category or 'Sem categoria',
+                'inputs': inputs.model_dump(), 'analysis': analyze_costs(inputs, observed['price_brl'], observed['fx_is_fallback']),
+                'saved': False}
+
+
+@app.put("/products/{product_id}/cost-analysis")
+def save_cost_analysis(product_id: int, inputs: CostInputs):
+    with SessionLocal() as db:
+        product = db.get(Product, product_id)
+        if not product: raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        scenario = db.scalar(select(CostScenario).where(CostScenario.product_id == product_id))
+        if scenario:
+            scenario.inputs_json = inputs.model_dump_json()
+            scenario.updated_at = datetime.now(timezone.utc)
+        else:
+            scenario = CostScenario(product_id=product_id, inputs_json=inputs.model_dump_json())
+            db.add(scenario)
+        db.commit()
+        db.refresh(scenario)
+        return cost_row(db, product, scenario)
+
+
+@app.get("/intelligence/costs")
+def list_cost_analyses(limit: int = Query(default=2000, ge=1, le=5000)):
+    with SessionLocal() as db:
+        rows = db.execute(select(Product, CostScenario).join(CostScenario, CostScenario.product_id == Product.id)
+                          .order_by(desc(CostScenario.updated_at), desc(CostScenario.id)).limit(limit)).all()
+        count = db.scalar(select(func.count(CostScenario.id))) or 0
+        return {'total': count, 'returned': len(rows), 'truncated': count > len(rows),
+                'scenarios': [cost_row(db, product, scenario) for product, scenario in rows]}

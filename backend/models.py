@@ -16,12 +16,19 @@ class Product(Base):
     title = Column(String(1000), nullable=False)
     category = Column(String(300), nullable=True, index=True)
     category_path = Column(Text, nullable=True)
+    manual_title = Column(String(180), nullable=True)
+    manual_category = Column(String(120), nullable=True, index=True)
+    border_color = Column(String(7), nullable=True)
     url = Column(String(2048), nullable=False, unique=True, index=True)
     image_url = Column(String(2048), nullable=True)
     price = Column(Float, nullable=True)
     price_min = Column(Float, nullable=True)
     price_max = Column(Float, nullable=True)
     currency = Column(String(3), nullable=True)
+    original_price = Column(Float, nullable=True)
+    discount_percent = Column(Float, nullable=True)
+    shipping_text = Column(String(160), nullable=True)
+    delivery_text = Column(String(160), nullable=True)
     rating = Column(Float, nullable=True)
     review_count = Column(Integer, nullable=True)
     orders_count = Column(Integer, nullable=True)
@@ -79,3 +86,11 @@ class CollectionSession(Base):
     skipped = Column(Integer, nullable=False, default=0)
     message = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+
+
+class CostScenario(Base):
+    __tablename__ = "cost_scenarios"
+    id = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    inputs_json = Column(Text, nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)

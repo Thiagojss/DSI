@@ -1,4 +1,4 @@
-"""Teste de fumaça da API v0.8.1. Usa banco temporário; não toca em data/dsi.db."""
+"""Teste de fumaça da API v0.11.0. Usa banco temporário; não toca em data/dsi.db."""
 import os
 import sys
 import tempfile
@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").json()["version"] == "0.8.1"
+assert client.get("/health").json()["version"] == "0.11.0"
 
 payload = {
     "title": "Produto de teste DSI",

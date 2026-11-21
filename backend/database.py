@@ -25,14 +25,19 @@ def migrate_schema():
         "source_product_id": "VARCHAR(80)", "category": "VARCHAR(300)",
         "category_path": "TEXT", "price_min": "FLOAT", "price_max": "FLOAT",
         "orders_count": "INTEGER", "availability": "VARCHAR(40)",
+        "original_price": "FLOAT", "discount_percent": "FLOAT",
+        "shipping_text": "VARCHAR(160)", "delivery_text": "VARCHAR(160)",
         "data_quality": "INTEGER NOT NULL DEFAULT 0", "capture_warnings": "TEXT",
         "is_favorite": "BOOLEAN NOT NULL DEFAULT 0",
+        "manual_title": "VARCHAR(180)", "manual_category": "VARCHAR(120)",
+        "border_color": "VARCHAR(7)",
     }
     with engine.begin() as connection:
         for name, sql_type in additions.items():
             if name not in existing:
                 connection.execute(text(f"ALTER TABLE products ADD COLUMN {name} {sql_type}"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_products_is_favorite ON products (is_favorite)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_products_manual_category ON products (manual_category)"))
         # Backfill identity for rows collected by v0.1, so a recapture updates
         # the existing row instead of creating a duplicate.
         rows = connection.execute(text("SELECT id, url FROM products WHERE source_product_id IS NULL")).all()

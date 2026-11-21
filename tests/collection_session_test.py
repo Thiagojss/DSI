@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").json()["version"] == "0.8.1"
+assert client.get("/health").json()["version"] == "0.11.0"
 
 base = {
     "title": "Luminária LED de teste",

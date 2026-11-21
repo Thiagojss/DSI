@@ -59,9 +59,10 @@
   }
 
   function categoryData() {
-    const nodes = [...document.querySelectorAll('nav a, [class*="breadcrumb"] a, [class*="Breadcrumb"] a')]
+    const nodes = [...document.querySelectorAll('[class*="breadcrumb" i] a, [aria-label*="breadcrumb" i] a, nav[aria-label*="breadcrumb" i] a')]
       .map(node => clean(node.textContent)).filter(Boolean)
       .filter(label => !/^(home|início|aliexpress)$/i.test(label));
+    // Não usar todos os links de <nav>: menus globais geram categorias falsas.
     const unique = [...new Set(nodes)].slice(-12);
     return { category: unique.at(-1) || null, category_path: unique };
   }
@@ -119,12 +120,17 @@
     const image = first(meta('meta[property="og:image"]'), json?.image?.url, Array.isArray(json?.image) ? json.image[0] : json?.image);
     const category = categoryData();
     const description = first(meta('meta[property="og:description"]'), meta('meta[name="description"]'), json?.description);
+    const discountBadge = (document.body?.innerText || "").match(/(?:-\s*)?(\d{1,3})\s*%\s*(?:OFF|desconto|de desconto)/i);
+    const discountPercent = discountBadge && Number(discountBadge[1]) <= 100 ? Number(discountBadge[1]) : null;
+    const shippingText = (document.body?.innerText || "").match(/(?:frete gr[aá]tis|envio gr[aá]tis|free shipping)/i)?.[0] || null;
+    const deliveryText = first(text('[class*="delivery-time"]'), text('[class*="estimated-delivery"]'))?.slice(0,160) || null;
 
     return {
       source: "aliexpress", title, url: location.href, source_product_id: sourceProductId,
       image_url: image, price, currency, rating,
       review_count: reviewCount != null ? Math.round(reviewCount) : null,
       orders_count: ordersCount, seller_name: seller, description,
+      discount_percent: discountPercent, shipping_text: shippingText, delivery_text: deliveryText,
       category: category.category, category_path: category.category_path,
       collected_at: new Date().toISOString()
     };
@@ -132,35 +138,98 @@
 
 
 
+  // Métricas dos cartões: aceita sinal explícito; não tenta inferir avaliações a partir de números soltos.
+  function scaledCount(raw) {
+    if (!raw) return null;
+    const compact = String(raw).replace(/\s/g, "").toLowerCase();
+    const suffix = compact.match(/(mil|milhão|milhões|k|m)\+?$/i)?.[1];
+    let numeric = compact.replace(/(milhões|milhão|mil|k|m)\+?$/i, "").replace(/\+$/, "");
+    if (!numeric) return null;
+    let value;
+    if (suffix) value = Number(numeric.replace(",", "."));
+    else value = Number(numeric.replace(/[.,](?=\d{3}(?:[.,]|$))/g, "").replace(",", "."));
+    if (!Number.isFinite(value) || value < 0) return null;
+    const multiplier = /mil|k/i.test(suffix || "") ? 1000 : /milh|^m$/i.test(suffix || "") ? 1000000 : 1;
+    return Math.round(value * multiplier);
+  }
+
+  function listingMetrics(card) {
+    const fullText = card.innerText || card.textContent || "";
+    const cleaned = fullText.replace(/\u00a0/g, " ");
+    const explicitRating = cleaned.match(/(?:★|⭐|rating|nota|avaliação(?:\s+média)?|classificação)\s*[:：]?\s*([0-5](?:[.,]\d{1,2})?)(?!\d)/i)
+      || cleaned.match(/\b([0-5][.,]\d{1,2})\s*(?:\/\s*5|★|⭐|estrelas?|stars?)/i);
+    let rating = explicitRating ? toNumber(explicitRating[1]) : null;
+    const ratingNode = card.querySelector('[aria-label*="star" i], [aria-label*="estrela" i], [class*="rating" i], [class*="star" i]');
+    const ratingLabel = [ratingNode?.getAttribute("aria-label"), ratingNode?.getAttribute("title"), ratingNode?.textContent].filter(Boolean).join(" ");
+    if (rating == null) {
+      const fromElement = ratingLabel.match(/\b([0-5](?:[.,]\d{1,2})?)(?:\s*\/\s*5|\s*(?:stars?|estrelas?))\b/i)
+        || ratingLabel.match(/^\s*([0-5][.,]\d{1,2})\s*$/);
+      rating = fromElement ? toNumber(fromElement[1]) : null;
+    }
+    if (rating != null && (rating < 0 || rating > 5)) rating = null;
+    const countLabel = '(?:avaliações|avaliação|reviews?|ratings?|classificações|opiniões)';
+    const countToken = '(\\d+(?:[.,]\\d+)*(?:\\s*(?:milhões|milhão|mil|k|m))?\\+?)';
+    // Regexes deliberadamente restritas à proximidade do rótulo e da contagem.
+    const beforeReview = cleaned.match(new RegExp(countToken + '\\s*' + countLabel, 'i'));
+    const afterReview = cleaned.match(new RegExp(countLabel + '\\s*[:：]?\\s*' + countToken, 'i'));
+    const nearRatingCount = rating != null ? cleaned.match(/(?:★|⭐|rating|nota)\s*[:：]?\s*[0-5](?:[.,]\d{1,2})?\s*\(\s*(\d+(?:[.,]\d+)*(?:\s*(?:mil|k|m))?\+?)\s*\)/i) : null;
+    const reviewToken = beforeReview?.[1] || afterReview?.[1] || nearRatingCount?.[1];
+    const reviewCount = reviewToken && !/^[0-5][.,]\d{1,2}$/.test(reviewToken.trim()) ? scaledCount(reviewToken) : null;
+    const countOrders = '(?:vendidos?|vendas?|pedidos?|orders?|sold)';
+    const beforeOrders = cleaned.match(new RegExp(countToken + '\\s*' + countOrders, 'i'));
+    const afterOrders = cleaned.match(new RegExp(countOrders + '\\s*[:：]?\\s*' + countToken, 'i'));
+    const ordersCount = scaledCount(beforeOrders?.[1] || afterOrders?.[1]);
+    return { rating, review_count: reviewCount, orders_count: ordersCount };
+  }
+
   function listingProductCards() {
     const links = [...document.querySelectorAll('a[href*="/item/"]')];
     const found = new Map();
+    const category = categoryData();
     for (const link of links) {
       const href = link.href;
       const id = href.match(/\/item\/(?:[^/]+\/)?(\d+)(?:\.html)?(?:[/?#]|$)/i)?.[1];
-      if (!id || found.has(id)) continue;
+      if (!id) continue;
       let card = link;
       for (let depth = 0; depth < 5 && card.parentElement; depth++) {
         const parent = card.parentElement;
-        const textValue = clean(parent.innerText || "") || "";
-        if (textValue.length >= 18 && textValue.length <= 1800 && parent.querySelector("img")) { card = parent; break; }
+        const candidate = (parent.innerText || "").trim();
+        if (candidate.length >= 18 && candidate.length <= 2000 && parent.querySelector("img")) { card = parent; break; }
         card = parent;
       }
-      const cardText = clean(card.innerText || link.innerText || "") || "";
+      const cardText = card.innerText || link.innerText || "";
       const imageNode = card.querySelector("img");
       const title = first(link.getAttribute("title"), link.getAttribute("aria-label"), imageNode?.getAttribute("alt"),
         [...card.querySelectorAll("[title]")].map(n => n.getAttribute("title")).find(v => v && v.length > 8),
         link.innerText, cardText.split(/\n/).find(line => line.length > 12 && !/[R$€£]/.test(line)));
-      if (!title || title.length < 6 || /aliexpress|frete grátis|ofertas/i.test(title)) continue;
+      if (!title || title.length < 6 || /^aliexpress$/i.test(title)) continue;
+      // Não atribuir um valor ao produto sem símbolo de moeda (impede usar preço parcelado ou desconto por engano).
       const priceMatch = cardText.match(/(?:R\$|US\$|[$€£¥])\s*[\d.,]+|[\d.,]+\s*(?:BRL|USD|EUR|CNY)/i);
       const priceRaw = priceMatch?.[0] || null;
       const price = toNumber(priceRaw);
       const currency = priceRaw ? (/R\$/i.test(priceRaw) ? "BRL" : /US\$|USD/i.test(priceRaw) ? "USD" : /€/i.test(priceRaw) ? "EUR" : /£/i.test(priceRaw) ? "GBP" : /¥|CNY/i.test(priceRaw) ? "CNY" : null) : null;
       const image = imageNode?.currentSrc || imageNode?.src || null;
-      const ratingMatch = cardText.match(/(?:★|⭐)\s*([0-5](?:[.,][0-9]+)?)/);
-      found.set(id, { source: "aliexpress", title: title.slice(0, 1000), url: `https://www.aliexpress.com/item/${id}.html`,
+      const metrics = listingMetrics(card);
+      const seller = first(card.querySelector('[class*="store-name" i], [class*="seller-name" i], [class*="shop-name" i]')?.textContent);
+      const badgeMatch = cardText.match(/(?:-\s*)?(\d{1,3})\s*%\s*(?:OFF|desconto|de desconto)/i);
+      const discountPercent = badgeMatch && Number(badgeMatch[1]) <= 100 ? Number(badgeMatch[1]) : null;
+      const originalNode = card.querySelector('del, s, [class*="original-price" i], [class*="price--original" i], [style*="line-through"]');
+      const originalText = clean(originalNode?.textContent);
+      const originalValue = originalText?.match(/(?:R\$|US\$|[$€£¥])\s*[\d.,]+|[\d.,]+\s*(?:BRL|USD|EUR|CNY)/i);
+      const originalCurrency = originalValue ? (/R\$/i.test(originalValue[0]) ? "BRL" : /US\$|USD/i.test(originalValue[0]) ? "USD" : /€/i.test(originalValue[0]) ? "EUR" : /£/i.test(originalValue[0]) ? "GBP" : /¥|CNY/i.test(originalValue[0]) ? "CNY" : null) : null;
+      const originalPrice = originalCurrency && originalCurrency === currency ? toNumber(originalValue[0]) : null;
+      const shippingText = cardText.match(/(?:frete gr[aá]tis|envio gr[aá]tis|free shipping|shipping free|frete de\s*(?:R\$|US\$)\s*[\d.,]+)/i)?.[0] || null;
+      const deliveryText = clean(card.querySelector('[class*="delivery-time" i], [class*="estimated-delivery" i], [data-pl*="delivery"]')?.textContent)?.slice(0,160) || null;
+      const result = { source: "aliexpress", title: title.slice(0, 1000), url: `https://www.aliexpress.com/item/${id}.html`,
         image_url: image && /^https?:/i.test(image) ? image : null, price, currency,
-        rating: ratingMatch ? toNumber(ratingMatch[1]) : null, collected_at: new Date().toISOString() });
+        ...metrics, seller_name: seller, original_price: originalPrice, discount_percent: discountPercent,
+        shipping_text: shippingText, delivery_text: deliveryText,
+        category: category.category, category_path: category.category_path,
+        collected_at: new Date().toISOString() };
+      // Links duplicados de um mesmo card: preferir a captura com mais campos disponíveis.
+      const previous = found.get(id);
+      const completeness = item => ["price", "rating", "review_count", "orders_count", "image_url"].filter(k => item[k] != null).length;
+      if (!previous || completeness(result) > completeness(previous)) found.set(id, result);
       if (found.size >= 40) break;
     }
     return [...found.values()];

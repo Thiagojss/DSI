@@ -1,4 +1,23 @@
+## 0.11.0 — Catálogo organizado pelo usuário
+
+- Renomeação de itens, categorias próprias e cores de borda persistentes em produtos.
+- Nomes/categorias originais mantidos separados das escolhas manuais.
+- Sincronização das categorias efetivas com Radar, Custos, estatísticas e filtros.
+- Captura de categorias restrita a trilha de navegação, sem menus globais.
+- Migração incremental e testes de organização, recaptura e interface responsiva.
+
 # Changelog
+
+## 0.9.0 — Radar de garimpo e coleta aprofundada
+- Nova página principal dedicada ao garimpo: panorama por categoria, histogramas de preço, cobertura de dados, tabela com ordenação e comparação de até 3 anúncios.
+- Medianas apenas por categoria, evitando médias de produtos não relacionados.
+- Parser de cards aprimorado para estrelas, contagens de avaliações e pedidos rotulados, milhares e milhões em PT/EN.
+- Captura adicional de desconto anunciado, preço riscado de mesma moeda, frete e entrega visíveis, e fornecedor quando identificado.
+- Coletas parciais preservam campos consolidados; sem novo preço não se inventa nova observação.
+- Novo endpoint `GET /intelligence/radar`.
+- Migração SQLite aditiva para novos campos de anúncio, sem alterar banco existente no pacote.
+- Testes de extração, API e comportamento do novo painel.
+
 
 ## 0.8.1 — Revisão técnica e refinamento visual
 - Centralizada a normalização e persistência de produtos, removendo duplicação entre captura individual e lotes.
@@ -57,3 +76,11 @@
 - Adicionados timeout de comunicação com a API, reconexão manual e proteção contra cliques duplicados.
 - Melhoradas mensagens de estado, erros e rótulos da interface.
 - Backend e banco permanecem inalterados; nenhuma coleta automática em segundo plano foi adicionada.
+
+## 0.10.0 — Custos, margens e teste de resistência
+- Nova aba de custos com formulário por produto, comparação por categoria e composição visual de custos.
+- Motor decimal para lucro, ROI, margem, equilíbrio, meta de margem e estresse ±10%.
+- Registro persistente de um cenário editável por produto em tabela aditiva `cost_scenarios`.
+- Nenhuma alíquota tributária presumida; frete e venda ausentes impedem lucro estimado.
+- Novos endpoints GET/PUT `/products/{id}/cost-analysis`, GET `/intelligence/costs`.
+- Testes de cenários, limites, validação, banco e interface desktop/mobile.

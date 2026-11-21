@@ -1,0 +1,21 @@
+// Exercita o parser da extensão sem depender de rede, Firefox nem HTML atual do AliExpress.
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert/strict');
+const source = fs.readFileSync('extension/scripts/content.js', 'utf8');
+const sandbox = { document: { querySelectorAll: () => [] }, location: { href:'https://www.aliexpress.com/', hostname:'www.aliexpress.com' }, browser:{runtime:{onMessage:{addListener(){}}}} };
+vm.runInNewContext(source.replace('  browser.runtime.onMessage.addListener(message => {', '  globalThis.testMetrics = listingMetrics; globalThis.testCount = scaledCount;\n  browser.runtime.onMessage.addListener(message => {'), sandbox);
+const card = (text,label='') => ({innerText:text,querySelector:()=>label?{getAttribute:()=>label,textContent:''}:null});
+const metrics = input => sandbox.testMetrics(card(input));
+assert.equal(sandbox.testCount('1,2 mil'),1200);
+assert.equal(sandbox.testCount('2.345'),2345);
+assert.equal(sandbox.testCount('3.1K+'),3100);
+assert.equal(sandbox.testCount('1,5M'),1500000);
+assert.equal(metrics('Produto XYZ ★ 4,8 1,2 mil avaliações 3 mil vendidos').rating,4.8);
+assert.equal(metrics('Produto XYZ ★ 4,8 1,2 mil avaliações 3 mil vendidos').review_count,1200);
+assert.equal(metrics('Produto XYZ ★ 4,8 1,2 mil avaliações 3 mil vendidos').orders_count,3000);
+assert.equal(metrics('Product XYZ Rating: 4.9 128 reviews 2.5K sold').review_count,128);
+assert.equal(metrics('Product XYZ Rating: 4.9 128 reviews 2.5K sold').orders_count,2500);
+assert.equal(metrics('Desconto 90% preço R$ 35,99').review_count,null);
+assert.equal(metrics('Desconto 90% preço R$ 35,99').rating,null);
+console.log('OK: métricas rotuladas PT/EN e números abreviados.');

@@ -1,6 +1,30 @@
-# DSI — Dropshipping Intelligence 0.8.1
+## v0.11.0 — Organização manual e categorias mais confiáveis
+
+- No dashboard, clique em **Organizar** no card do produto, na tabela do Radar ou no comparador.
+- Defina **nome personalizado**, **categoria própria** e **cor da borda**. A categoria digitada aparece como sugestão em futuras edições, mas não é uma taxonomia automática imposta pelo sistema.
+- Nome/categoria capturados são preservados como fonte original; a personalização tem prioridade em **Produtos**, **Radar**, **Custos**, **filtros** e **estatísticas**.
+- Novas capturas do mesmo anúncio **não apagam** os valores manuais. Para restaurar a fonte, deixe o nome/categoria vazios e selecione **Sem cor**.
+- A categoria de captura tenta ler apenas *breadcrumbs* identificados, não menus de navegação globais; categorias ausentes ficam sem classificação até serem definidas.
+- Endpoint: `PUT /products/{id}/organization` com `manual_title`, `manual_category` e `border_color` (`#RRGGBB` ou `null`). Envia os três campos, substituindo a personalização anterior.
+- Migração aditiva: `manual_title`, `manual_category`, `border_color` e índice de categoria manual; o ZIP não inclui `data/dsi.db`.
+
+**Atualização:** faça cópia de `data/dsi.db`, preserve a pasta `data` e atualize apenas arquivos de código. Reinicie a API e recarregue a extensão Firefox. Sem acesso a uma sessão real do AliExpress, a extração de categorias em páginas reais ainda precisa ser validada.
+
+# DSI — Dropshipping Intelligence 0.9.0
 
 Extensão Firefox + API Python local + painel web para garimpar, catalogar e analisar produtos do AliExpress, com favoritos persistentes, histórico de preços, alertas e sessões de coleta em lote.
+
+## Versão 0.9.0 — Radar de garimpo e coleta enriquecida
+
+- O dashboard agora inicia em **Radar de garimpo**, com interface mais densa e voltada para tomada de decisão: filtros por categoria, busca por produto ou fornecedor, classificação por evidência, tabela de comparação, faixa de preços em BRL, mediana por categoria, quantidade de dados conhecidos e comparador de até 3 anúncios.
+- **Não misturamos preços ou avaliações em uma média geral entre categorias no Radar.** O painel inicia na categoria mais representada; use o seletor para comparar outros nichos. Selecionar "Todas" mostra o panorama por categoria, sem um preço mediano global.
+- Listagens do AliExpress passam a reconhecer avaliações, contagem de opiniões e pedidos quando aparecem com **rótulos identificáveis** em português ou inglês, como `★ 4,8`, `1,2 mil avaliações`, `3 mil vendidos`, `4.9 (128)`, `128 reviews`, `2.5K sold`. Suporta números compactos (`mil`, `K`, `M`) sem confundir nota e volume.
+- Captura enriquecida quando visíveis: **desconto explicitamente anunciado**, preço original riscado (se reconhecida a mesma moeda), frete descrito, texto de estimativa de entrega e fornecedor identificado pelo elemento do card. Esses dados aparecem no comparador de anúncios.
+- Recapturas parciais **não apagam** preço anterior, categoria, nota, vendedor nem outros campos já conhecidos. Capturas sem novo preço não geram uma observação histórica repetida.
+- Endpoint `GET /intelligence/radar?limit=2000` com limite máximo de 5.000 produtos. A interface indica quando a análise não cobre todo o catálogo.
+- Banco atualizado por **migração aditiva** para os quatro novos campos (`original_price`, `discount_percent`, `shipping_text`, `delivery_text`), sem apagar nem recriar o banco existente.
+
+**Precisão e limites:** os dados são transcritos do conteúdo visível na aba aberta. O AliExpress altera layout, idioma e informações por região. Campos não reconhecidos são mantidos em branco (—); não simulamos volume de vendas ou lucratividade. Desconto é uma afirmação do anúncio, não uma auditoria de preço. Uma contagem de pedidos exibida não comprova demanda futura. Valores cambiais são indicativos e não incluem frete, impostos ou tarifas. Comparação de preços exige categoria e moeda coerentes; produtos e variantes podem continuar sendo diferentes mesmo no mesmo nicho.
 
 ## Revisão técnica 0.8.1 — Otimização e dashboard
 
@@ -36,7 +60,7 @@ Extensão Firefox + API Python local + painel web para garimpar, catalogar e ana
 - Captura usa o mesmo conjunto de dados apresentado na pré-visualização.
 - Timeout nas chamadas à API, botão de reconexão e proteção contra cliques repetidos.
 - Mensagens mais claras para páginas incompatíveis, falhas de extração e indisponibilidade do backend.
-- A API 0.8.1 mantém compatibilidade com os endpoints anteriores.
+- A API 0.9.0 mantém compatibilidade com os endpoints anteriores.
 
 ## Novidades da extensão Firefox 0.5.0
 
@@ -47,7 +71,7 @@ Extensão Firefox + API Python local + painel web para garimpar, catalogar e ana
 - Lista de alertas recentes com ação para marcá-los como lidos.
 - Atualização manual dos indicadores do monitoramento.
 
-Esta seção documenta a evolução da extensão na v0.5.0; os recursos de captura permanecem preservados na v0.8.0.
+Esta seção documenta a evolução da extensão na v0.5.0; os recursos de captura permanecem preservados na v0.9.0.
 
 ## Novidades da versão 0.4.0
 
@@ -117,6 +141,7 @@ Na primeira inicialização da v0.4.0, o backend cria as tabelas de histórico a
 | PUT | `/alerts/{id}/read` | Marcar alerta como lido |
 | GET | `/monitoring/summary` | Resumo das observações e alertas |
 | PUT | `/products/{id}/currency` | Corrigir moeda de um produto |
+| GET | `/intelligence/radar` | Análise do catálogo para comparações por categoria (limite explícito) |
 | GET | `/stats` | Indicadores do catálogo |
 | GET | `/categories` | Categorias identificadas |
 | GET | `/exchange-rates` | Taxas de conversão para BRL |
@@ -125,7 +150,7 @@ Na primeira inicialização da v0.4.0, o backend cria as tabelas de histórico a
 
 A conversão para BRL continua sendo uma referência indicativa via Frankfurter (referência BCE). Não inclui spread, IOF, frete, tributos, tarifas ou cupons. Moeda ausente não é inferida automaticamente.
 
-## Atualizar extensão Firefox (0.8.1)
+## Atualizar extensão Firefox (0.10.0)
 
 1. Acesse `about:debugging#/runtime/this-firefox`.
 2. Remova a extensão temporária antiga, se necessário.
@@ -138,4 +163,25 @@ A conversão para BRL continua sendo uma referência indicativa via Frankfurter 
 - A sessão em lote coleta somente itens já carregados na página aberta; para mais resultados, role a listagem e execute outra sessão. Não existe navegação automática entre páginas ou coleta periódica em segundo plano.
 - A extração depende da estrutura atual da página do AliExpress e pode não preencher todos os campos.
 - A API é local e não possui autenticação. Não a exponha diretamente à internet.
-- Próxima etapa recomendada: definir fonte permitida para atualização periódica, agendador configurável, regras de alerta (limiares) e notificações sem duplicidade.
+- Próxima etapa recomendada: conferir a coleta real nas versões/idiomas do AliExpress usados pelo usuário e registrar exemplos de cards não capturados para ajustar seletores com segurança; validar cenários com documentos reais de frete, tarifas e tributação.
+- A nova análise prioriza comparação **descritiva**, sem nota de "produto vencedor" inventada. A falta de evidência não equivale a avaliação negativa do produto.
+
+## v0.10.0 — Custos e margens por produto
+
+O menu **Custos e margens** permite selecionar um item do catálogo, preencher uma simulação unitária e comparar cenários salvos **por categoria**. O DSI preserva todos os produtos e recursos das versões anteriores.
+
+**Custos configuráveis (BRL/unidade):** preço de compra manual (opcional; na ausência, usa o preço coletado convertido), frete informado, alíquota hipotética de importação sobre compra + frete, custos de importação fixos, comissão de marketplace, tarifas de pagamento, tributos sobre venda, reserva de devolução, embalagem, anúncios/CPA e outros gastos. Também aceita preço de venda e meta de margem.
+
+**Resultados:** custo fixo unitário, taxas variáveis na venda, custo total, lucro estimado, margem sobre receita (`lucro / venda`), ROI sobre custo total (`lucro / custo`), preço de equilíbrio e preço necessário à meta de margem, quando viável. Teste de resistência: venda -10%, compra +10% e ambos. Barras de composição de custos.
+
+**Importante:** não existem alíquotas legais padronizadas na aplicação. Os campos percentuais iniciam em zero apenas como **premissas não verificadas**; confirme todos. Frete ausente permanece `null`, impedindo margem/lucro em vez de presumir frete grátis. Preço de venda ausente também impede calcular lucro. Um frete de `0` deve significar frete efetivamente grátis ou integralmente já tratado em outros custos. A ferramenta **não calcula tributos oficiais**, e a base de importação utilizada é uma simplificação configurável, não o cálculo da legislação brasileira. Verifique com profissional habilitado quando necessário.
+
+**Preço de compra usado:** se não houver preço manual, usa o **preço mais recente coletado e convertido para BRL**, portanto a simulação muda se o preço da captura ou o câmbio utilizado mudar. Taxas de câmbio de contingência são sinalizadas. Para preservar uma cotação efetiva, informe preço manual. A análise salva premissas, não um comprovante da compra ou uma cotação cambial congelada.
+
+**Persistência:** nova tabela `cost_scenarios` criada com `Base.metadata.create_all` no banco SQLite existente, sem apagar `data/dsi.db`. Um cenário editável por produto. Novos endpoints:
+
+- `GET /products/{id}/cost-analysis` — obtém análise ou cenário inicial incompleto.
+- `PUT /products/{id}/cost-analysis` — valida e grava as premissas (`CostInputs`).
+- `GET /intelligence/costs` — análises registradas para comparação por categoria.
+
+**Atualização:** faça backup da pasta `data`; substitua os arquivos do projeto, **nunca substitua ou delete o banco**; reinicie a API e recarregue a extensão no Firefox. Os endpoints anteriores permanecem. Testes `python tests/cost_analysis_test.py` e regressões existentes. O banco do usuário não acompanha o ZIP.
