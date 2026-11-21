@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "DSI - Dropshipping Intelligence",
+  "version": "0.4.0",
+  "description": "Captura produtos e abre o painel local de inteligência do DSI.",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*"
+  ],
+  "action": {
+    "default_title": "DSI - Capturar produto",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.aliexpress.com/*",
+        "*://aliexpress.com/*"
+      ],
+      "js": [
+        "scripts/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "dsi-local@example.invalid",
+      "strict_min_version": "109.0"
+    }
+  }
+}

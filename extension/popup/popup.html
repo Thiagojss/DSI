@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DSI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div class="logo">DSI</div>
+      <div>
+        <h1>Dropshipping Intelligence</h1>
+        <p>Captura de produtos</p>
+      </div>
+    </header>
+
+    <div id="api-status" class="status status-checking">Verificando backend...</div>
+
+    <section class="panel">
+      <h2>Página atual</h2>
+      <p id="page-status" class="muted">Verificando a página aberta...</p>
+      <button id="capture-button" type="button">Capturar produto</button>
+      <p id="feedback" role="status" aria-live="polite" class="feedback"></p>
+    </section>
+
+    <footer>
+      <a href="http://127.0.0.1:8000/dashboard" target="_blank" rel="noopener">Abrir painel de produtos ↗</a>
+      <span>DSI v0.4.0</span>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
