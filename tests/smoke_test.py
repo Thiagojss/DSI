@@ -1,4 +1,4 @@
-"""Teste de fumaça da API v0.4.0. Usa banco temporário; não toca em data/dsi.db."""
+"""Teste de fumaça da API v0.8.1. Usa banco temporário; não toca em data/dsi.db."""
 import os
 import sys
 import tempfile
@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").status_code == 200
+assert client.get("/health").json()["version"] == "0.8.1"
 
 payload = {
     "title": "Produto de teste DSI",
@@ -28,10 +28,17 @@ created = client.post("/products", json=payload)
 assert created.status_code == 200, created.text
 product_id = created.json()["id"]
 assert len(client.get(f"/products/{product_id}/history").json()) == 1
+assert client.get(f"/products/{product_id}").json()["is_favorite"] is False
+fav = client.put(f"/products/{product_id}/favorite", json={"is_favorite": True})
+assert fav.status_code == 200 and fav.json()["is_favorite"] is True
+assert len(client.get("/favorites").json()) == 1
+assert client.get(f"/products/{product_id}").json()["is_favorite"] is True
+assert client.put("/products/99999/favorite", json={"is_favorite": True}).status_code == 404
 
 payload["price"] = 15.0
 updated = client.post("/products", json=payload)
 assert updated.status_code == 200 and updated.json()["updated"] is True
+assert client.get(f"/products/{product_id}").json()["is_favorite"] is True
 history = client.get(f"/products/{product_id}/history").json()
 assert len(history) == 2
 alerts = client.get("/alerts?unread_only=true").json()
@@ -41,6 +48,7 @@ assert client.get("/monitoring/summary").json()["unread_alerts"] == 0
 # Captura sem alteração deve acrescentar observação, mas não duplicar alerta.
 client.post("/products", json=payload)
 assert len(client.get("/alerts").json()) == 1
+assert client.get("/products/" + str(product_id)).json()["is_favorite"] is True
 # Mudança somente na faixa de variantes gera alerta próprio, sem percentual enganoso.
 payload["price_min"] = 12.0
 payload["price_max"] = 18.0
@@ -48,6 +56,9 @@ client.post("/products", json=payload)
 latest_alerts = client.get("/alerts").json()
 assert latest_alerts[0]["alert_type"] == "price_range_changed"
 assert latest_alerts[0]["change_percent"] is None
+unfav = client.put(f"/products/{product_id}/favorite", json={"is_favorite": False})
+assert unfav.status_code == 200 and unfav.json()["is_favorite"] is False
+assert client.get("/favorites").json() == []
 assert client.post("/products", json={**payload, "url": "https://www.aliexpress.com/category/123.html"}).status_code == 422
-print("OK: saúde, cadastro, histórico, alerta, leitura de alerta e validação de URL.")
+print("OK: saúde, cadastro, favoritos, histórico, alertas, leitura de alerta e validação de URL.")
 _temp.cleanup()

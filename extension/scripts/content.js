@@ -130,8 +130,48 @@
     };
   }
 
+
+
+  function listingProductCards() {
+    const links = [...document.querySelectorAll('a[href*="/item/"]')];
+    const found = new Map();
+    for (const link of links) {
+      const href = link.href;
+      const id = href.match(/\/item\/(?:[^/]+\/)?(\d+)(?:\.html)?(?:[/?#]|$)/i)?.[1];
+      if (!id || found.has(id)) continue;
+      let card = link;
+      for (let depth = 0; depth < 5 && card.parentElement; depth++) {
+        const parent = card.parentElement;
+        const textValue = clean(parent.innerText || "") || "";
+        if (textValue.length >= 18 && textValue.length <= 1800 && parent.querySelector("img")) { card = parent; break; }
+        card = parent;
+      }
+      const cardText = clean(card.innerText || link.innerText || "") || "";
+      const imageNode = card.querySelector("img");
+      const title = first(link.getAttribute("title"), link.getAttribute("aria-label"), imageNode?.getAttribute("alt"),
+        [...card.querySelectorAll("[title]")].map(n => n.getAttribute("title")).find(v => v && v.length > 8),
+        link.innerText, cardText.split(/\n/).find(line => line.length > 12 && !/[R$€£]/.test(line)));
+      if (!title || title.length < 6 || /aliexpress|frete grátis|ofertas/i.test(title)) continue;
+      const priceMatch = cardText.match(/(?:R\$|US\$|[$€£¥])\s*[\d.,]+|[\d.,]+\s*(?:BRL|USD|EUR|CNY)/i);
+      const priceRaw = priceMatch?.[0] || null;
+      const price = toNumber(priceRaw);
+      const currency = priceRaw ? (/R\$/i.test(priceRaw) ? "BRL" : /US\$|USD/i.test(priceRaw) ? "USD" : /€/i.test(priceRaw) ? "EUR" : /£/i.test(priceRaw) ? "GBP" : /¥|CNY/i.test(priceRaw) ? "CNY" : null) : null;
+      const image = imageNode?.currentSrc || imageNode?.src || null;
+      const ratingMatch = cardText.match(/(?:★|⭐)\s*([0-5](?:[.,][0-9]+)?)/);
+      found.set(id, { source: "aliexpress", title: title.slice(0, 1000), url: `https://www.aliexpress.com/item/${id}.html`,
+        image_url: image && /^https?:/i.test(image) ? image : null, price, currency,
+        rating: ratingMatch ? toNumber(ratingMatch[1]) : null, collected_at: new Date().toISOString() });
+      if (found.size >= 40) break;
+    }
+    return [...found.values()];
+  }
+
   browser.runtime.onMessage.addListener(message => {
-    if (message?.action === "DSI_CAPTURE_PRODUCT") {
+    if (message?.action === "DSI_COLLECT_LISTING") {
+      try { return Promise.resolve({ products: listingProductCards(), page_url: location.href }); }
+      catch (error) { return Promise.resolve({ error: error.message }); }
+    }
+    if (message?.action === "DSI_CAPTURE_PRODUCT" || message?.action === "DSI_PREVIEW_PRODUCT") {
       try { return Promise.resolve(captureProduct()); }
       catch (error) { return Promise.resolve({ error: error.message }); }
     }

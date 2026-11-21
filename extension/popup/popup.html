@@ -9,26 +9,55 @@
 <body>
   <main class="app">
     <header>
-      <div class="logo">DSI</div>
-      <div>
-        <h1>Dropshipping Intelligence</h1>
-        <p>Captura de produtos</p>
-      </div>
+      <div class="logo" aria-hidden="true">DSI</div>
+      <div class="brand"><h1>Dropshipping Intelligence</h1><p>Garimpo inteligente de produtos</p></div>
+      <span class="version">0.8.1</span>
     </header>
 
-    <div id="api-status" class="status status-checking">Verificando backend...</div>
+    <div class="topline">
+      <div id="api-status" class="status status-checking" role="status">Verificando API...</div>
+      <button id="retry-button" class="text-button" type="button">Reconectar</button>
+    </div>
 
-    <section class="panel">
-      <h2>Página atual</h2>
-      <p id="page-status" class="muted">Verificando a página aberta...</p>
-      <button id="capture-button" type="button">Capturar produto</button>
+    <section class="panel current-panel" aria-labelledby="current-heading">
+      <div class="section-heading"><h2 id="current-heading">Produto nesta página</h2><span id="page-badge" class="badge">Verificando</span></div>
+      <div id="product-preview" class="product-preview">
+        <p id="page-status" class="muted">Verificando a página aberta...</p>
+      </div>
+      <button id="capture-button" type="button" disabled>Adicionar ao DSI</button>
       <p id="feedback" role="status" aria-live="polite" class="feedback"></p>
     </section>
 
-    <footer>
-      <a href="http://127.0.0.1:8000/dashboard" target="_blank" rel="noopener">Abrir painel de produtos ↗</a>
-      <span>DSI v0.4.0</span>
-    </footer>
+    <section class="panel collection-panel">
+      <div class="section-heading"><h2>Sessão de garimpo</h2><span id="listing-badge" class="badge">Aguardando página</span></div>
+      <p id="listing-status" class="muted">Abra uma página de busca ou categoria do AliExpress para identificar produtos visíveis.</p>
+      <div id="listing-preview" class="listing-preview" hidden></div>
+      <button id="collect-listing-button" type="button" disabled>Coletar produtos desta página</button>
+      <p id="collection-feedback" role="status" aria-live="polite" class="feedback"></p>
+      <p class="muted note">Coleta somente itens já carregados na página aberta (máximo de 40 por sessão). Não navega automaticamente nem contorna controles do site.</p>
+    </section>
+
+    <section class="panel history-panel" id="history-panel" hidden>
+      <div class="section-heading"><h2>Histórico deste produto</h2><span id="history-count" class="muted"></span></div>
+      <div id="history-content" class="history-content"></div>
+    </section>
+
+    <section class="panel monitoring-panel">
+      <div class="section-heading"><h2>Visão geral</h2><button id="refresh-button" class="icon-button" type="button" title="Atualizar indicadores" aria-label="Atualizar indicadores">↻</button></div>
+      <div class="metrics">
+        <div><strong id="metric-products">—</strong><span>produtos com histórico</span></div>
+        <div><strong id="metric-observations">—</strong><span>coletas registradas</span></div>
+        <div><strong id="metric-alerts">—</strong><span>alertas pendentes</span></div>
+      </div>
+      <p id="monitoring-note" class="muted note">Os dados são atualizados por novas capturas.</p>
+    </section>
+
+    <section class="panel alerts-panel">
+      <div class="section-heading"><h2>Alertas de preço</h2><span id="alerts-caption" class="muted">Não lidos</span></div>
+      <div id="alerts-list" class="alerts-list"><p class="muted">Carregando alertas...</p></div>
+    </section>
+
+    <footer><a href="http://127.0.0.1:8000/dashboard" target="_blank" rel="noopener">Abrir dashboard ↗</a><span>DSI · Firefox</span></footer>
   </main>
   <script src="popup.js"></script>
 </body>

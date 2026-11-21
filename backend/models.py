@@ -29,6 +29,7 @@ class Product(Base):
     description = Column(Text, nullable=True)
     availability = Column(String(40), nullable=True)
     data_quality = Column(Integer, nullable=False, default=0)
+    is_favorite = Column(Boolean, nullable=False, default=False, index=True)
     capture_warnings = Column(Text, nullable=True)
     collected_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -63,3 +64,18 @@ class PriceAlert(Base):
     message = Column(String(500), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
     is_read = Column(Boolean, nullable=False, default=False, index=True)
+
+
+class CollectionSession(Base):
+    __tablename__ = "collection_sessions"
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(40), nullable=False, default="aliexpress")
+    source_url = Column(String(2048), nullable=False)
+    status = Column(String(24), nullable=False, default="completed")
+    total_found = Column(Integer, nullable=False, default=0)
+    saved_new = Column(Integer, nullable=False, default=0)
+    updated = Column(Integer, nullable=False, default=0)
+    skipped = Column(Integer, nullable=False, default=0)
+    message = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)

@@ -1,0 +1,11 @@
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8'));
+const content = fs.readFileSync('extension/scripts/content.js', 'utf8');
+const popup = fs.readFileSync('extension/popup/popup.js', 'utf8');
+const html = fs.readFileSync('extension/popup/popup.html', 'utf8');
+const main = fs.readFileSync('backend/main.py', 'utf8');
+if (manifest.version !== '0.8.1') throw new Error('Versão da extensão incorreta');
+if (!content.includes('DSI_COLLECT_LISTING') || !content.includes('found.size >= 40')) throw new Error('Coleta em lote ausente ou sem limite');
+if (!popup.includes('/collection-sessions') || !html.includes('collect-listing-button')) throw new Error('Fluxo da sessão ausente');
+if (!main.includes('@app.post("/collection-sessions")') || !main.includes('@app.get("/collection-sessions")')) throw new Error('Endpoints da sessão ausentes');
+console.log('OK: contrato da coleta em lote e versão 0.8.1.');

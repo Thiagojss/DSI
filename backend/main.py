@@ -6,10 +6,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
-from sqlalchemy import select, or_, desc
+from sqlalchemy import select, or_, desc, func
+from sqlalchemy.exc import SQLAlchemyError
 
 from database import Base, engine, SessionLocal, migrate_schema
-from models import Product, PriceHistory, PriceAlert
+from models import Product, PriceHistory, PriceAlert, CollectionSession
 from collectors.aliexpress import normalize_product
 from analyzers.scoring import assess_data_quality
 from fx import get_rate_to_brl
@@ -17,9 +18,8 @@ from dashboard import dashboard_page
 
 migrate_schema()
 Base.metadata.create_all(bind=engine)
-migrate_schema()
 
-app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="0.4.0")
+app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="0.8.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
@@ -73,7 +73,7 @@ def serialize_product(p: Product):
         "fx_source": fx["source"] if fx else None, "fx_is_fallback": fx["is_fallback"] if fx else False, "rating": p.rating, "review_count": p.review_count,
         "orders_count": p.orders_count, "seller_name": p.seller_name,
         "description": p.description, "availability": p.availability,
-        "data_quality": p.data_quality, "capture_warnings": warnings,
+        "data_quality": p.data_quality, "is_favorite": bool(p.is_favorite), "capture_warnings": warnings,
         "collected_at": p.collected_at.isoformat() if p.collected_at else None,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -140,40 +140,53 @@ def dashboard():
 def health():
     with SessionLocal() as db:
         db.execute(select(1))
-    return {"status": "ok", "service": "dsi-api", "version": "0.4.0", "database": "connected"}
+    return {"status": "ok", "service": "dsi-api", "version": "0.8.1", "database": "connected"}
 
 
-@app.post("/products")
-def save_product(payload: ProductIn):
-    try:
-        values = normalize_product(payload.model_dump(mode="json"))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-
+def prepare_product_values(payload: ProductIn) -> dict:
+    """Normaliza uma captura e calcula a completude antes de persistir."""
+    values = normalize_product(payload.model_dump(mode="json"))
     values["image_url"] = str(payload.image_url) if payload.image_url else None
     values["category_path"] = json.dumps(values.get("category_path") or [], ensure_ascii=False)
     values["collected_at"] = payload.collected_at or datetime.now(timezone.utc)
     quality = assess_data_quality(values)
     values["data_quality"] = quality["data_quality"]
     values["capture_warnings"] = json.dumps(quality["missing_fields"], ensure_ascii=False)
+    return values
 
-    with SessionLocal() as db:
-        existing = db.scalar(select(Product).where(
-            or_(Product.source_product_id == values["source_product_id"], Product.url == values["url"])
-        ))
-        if existing:
-            for key, value in values.items():
-                setattr(existing, key, value)
-            existing.updated_at = datetime.now(timezone.utc)
-            db.flush()
-            record_price_observation(db, existing, values["collected_at"])
-            db.commit(); db.refresh(existing)
-            return {"message": "Produto atualizado no DSI.", "id": existing.id, "updated": True, "data_quality": existing.data_quality}
-        product = Product(**values)
-        db.add(product); db.flush()
-        record_price_observation(db, product, values["collected_at"])
-        db.commit(); db.refresh(product)
-        return {"message": "Produto salvo no DSI.", "id": product.id, "updated": False, "data_quality": product.data_quality}
+
+def upsert_product(db, payload: ProductIn) -> tuple[Product, bool]:
+    """Cria ou atualiza um produto e registra a observação de preço."""
+    values = prepare_product_values(payload)
+    existing = db.scalar(select(Product).where(
+        or_(Product.source_product_id == values["source_product_id"], Product.url == values["url"])
+    ))
+    if existing:
+        for key, value in values.items():
+            setattr(existing, key, value)
+        existing.updated_at = datetime.now(timezone.utc)
+        product, updated = existing, True
+    else:
+        product, updated = Product(**values), False
+        db.add(product)
+    db.flush()
+    record_price_observation(db, product, values["collected_at"])
+    return product, updated
+
+
+@app.post("/products")
+def save_product(payload: ProductIn):
+    try:
+        with SessionLocal() as db:
+            product, updated = upsert_product(db, payload)
+            db.commit()
+            db.refresh(product)
+            return {
+                "message": "Produto atualizado no DSI." if updated else "Produto salvo no DSI.",
+                "id": product.id, "updated": updated, "data_quality": product.data_quality,
+            }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/products")
@@ -190,8 +203,61 @@ def list_products(limit: int = Query(default=100, ge=1, le=500), category: Optio
         rows = db.scalars(query).all() if sort in {"price_asc", "price_desc"} else db.scalars(query.limit(limit)).all()
         serialized = [serialize_product(p) for p in rows]
         if sort in {"price_asc", "price_desc"}:
-            serialized.sort(key=lambda item: item["price_brl"] if item["price_brl"] is not None else float("inf"), reverse=(sort == "price_desc"))
+            direction = -1 if sort == "price_desc" else 1
+            serialized.sort(key=lambda item: (
+                item["price_brl"] is None,
+                (item["price_brl"] or 0) * direction,
+            ))
         return serialized[:limit]
+
+
+class CollectionBatchIn(BaseModel):
+    source_url: HttpUrl
+    products: list[ProductIn] = Field(min_length=1, max_length=50)
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url(cls, value):
+        host = (value.host or "").lower()
+        if not (host == "aliexpress.com" or host.endswith(".aliexpress.com")):
+            raise ValueError("A sessão aceita somente páginas do AliExpress.")
+        return value
+
+
+@app.post("/collection-sessions")
+def create_collection_session(payload: CollectionBatchIn):
+    source_url = str(payload.source_url)
+    counts = {"new": 0, "updated": 0, "skipped": 0}
+    with SessionLocal() as db:
+        for item in payload.products:
+            try:
+                with db.begin_nested():
+                    _, updated = upsert_product(db, item)
+                counts["updated" if updated else "new"] += 1
+            except (ValueError, TypeError, SQLAlchemyError):
+                counts["skipped"] += 1
+        total = len(payload.products)
+        status = "completed" if counts["skipped"] == 0 else ("partial" if counts["new"] + counts["updated"] else "empty")
+        session = CollectionSession(
+            source="aliexpress", source_url=source_url, status=status, total_found=total,
+            saved_new=counts["new"], updated=counts["updated"], skipped=counts["skipped"],
+            message="Lote processado a partir dos produtos visíveis na página aberta."
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return {"session_id": session.id, "status": status, "total_found": total,
+                "saved_new": counts["new"], "updated": counts["updated"], "skipped": counts["skipped"],
+                "message": session.message}
+
+
+@app.get("/collection-sessions")
+def list_collection_sessions(limit: int = Query(default=30, ge=1, le=100)):
+    with SessionLocal() as db:
+        rows = db.scalars(select(CollectionSession).order_by(desc(CollectionSession.created_at), desc(CollectionSession.id)).limit(limit)).all()
+        return [{"id": row.id, "source": row.source, "source_url": row.source_url, "status": row.status,
+                 "total_found": row.total_found, "saved_new": row.saved_new, "updated": row.updated,
+                 "skipped": row.skipped, "message": row.message, "created_at": row.created_at.isoformat()} for row in rows]
 
 
 @app.get("/categories")
@@ -199,6 +265,32 @@ def list_categories():
     with SessionLocal() as db:
         products = db.scalars(select(Product.category).where(Product.category.is_not(None)).distinct().order_by(Product.category)).all()
         return [{"name": name} for name in products]
+
+
+class FavoriteUpdate(BaseModel):
+    is_favorite: bool
+
+
+@app.put("/products/{product_id}/favorite")
+def update_product_favorite(product_id: int, payload: FavoriteUpdate):
+    """Define explicitamente se o produto está ou não nos favoritos."""
+    with SessionLocal() as db:
+        product = db.get(Product, product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        product.is_favorite = payload.is_favorite
+        db.commit()
+        db.refresh(product)
+        return {"id": product.id, "is_favorite": bool(product.is_favorite),
+                "message": "Produto adicionado aos favoritos." if product.is_favorite else "Produto removido dos favoritos."}
+
+
+@app.get("/favorites")
+def list_favorites(limit: int = Query(default=500, ge=1, le=500)):
+    with SessionLocal() as db:
+        rows = db.scalars(select(Product).where(Product.is_favorite.is_(True))
+                          .order_by(desc(Product.updated_at), desc(Product.id)).limit(limit)).all()
+        return [serialize_product(product) for product in rows]
 
 
 @app.get("/products/{product_id}")
@@ -213,26 +305,36 @@ def get_product(product_id: int):
 @app.get("/stats")
 def stats():
     with SessionLocal() as db:
-        products = db.scalars(select(Product)).all()
-        categories = {}
-        for product in products:
-            key = product.category or "Sem categoria"
-            categories[key] = categories.get(key, 0) + 1
-        priced = [p for p in products if p.price is not None]
-        converted_total = 0.0
-        converted_count = 0
-        for product in priced:
-            fx = get_rate_to_brl(product.currency) if product.currency else None
-            if fx:
-                converted_total += float(product.price) * fx["rate"]
-                converted_count += 1
+        total = db.scalar(select(func.count(Product.id))) or 0
+        quality = round(db.scalar(select(func.avg(Product.data_quality))) or 0)
+        priced = db.scalar(select(func.count(Product.id)).where(Product.price.is_not(None))) or 0
+        with_currency = db.scalar(select(func.count(Product.id)).where(Product.currency.is_not(None))) or 0
+        categories = dict(db.execute(
+            select(func.coalesce(Product.category, "Sem categoria"), func.count(Product.id))
+            .group_by(func.coalesce(Product.category, "Sem categoria"))
+        ).all())
+        groups = db.execute(
+            select(Product.currency, func.sum(Product.price), func.count(Product.id))
+            .where(Product.price.is_not(None), Product.currency.is_not(None))
+            .group_by(Product.currency)
+        ).all()
+        converted = [
+            (float(total_price or 0) * rate["rate"], count)
+            for currency, total_price, count in groups
+            if (rate := get_rate_to_brl(currency))
+        ]
+        converted_total = sum(value for value, _ in converted)
+        converted_count = sum(count for _, count in converted)
+        top = sorted(
+            ({"name": name, "count": count} for name, count in categories.items()),
+            key=lambda item: item["count"], reverse=True,
+        )[:6]
         return {
-            "total_products": len(products), "categories": categories,
-            "average_data_quality": round(sum(p.data_quality for p in products) / len(products)) if products else 0,
-            "products_with_price": len(priced), "products_with_currency": sum(1 for p in products if p.currency),
-            "products_converted": converted_count,
+            "total_products": total, "categories": categories,
+            "average_data_quality": quality, "products_with_price": priced,
+            "products_with_currency": with_currency, "products_converted": converted_count,
             "average_price_brl": round(converted_total / converted_count, 2) if converted_count else None,
-            "top_categories": sorted([{"name": k, "count": v} for k, v in categories.items()], key=lambda x: x["count"], reverse=True)[:6]
+            "top_categories": top,
         }
 
 

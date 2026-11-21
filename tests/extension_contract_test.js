@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'extension/manifest.json'), 'utf8'));
+const popup = fs.readFileSync(path.join(root, 'extension/popup/popup.js'), 'utf8');
+const content = fs.readFileSync(path.join(root, 'extension/scripts/content.js'), 'utf8');
+assert.equal(manifest.version, '0.8.1');
+assert.equal(manifest.manifest_version, 3);
+assert.ok(manifest.permissions.includes('activeTab'));
+assert.ok(popup.includes('DSI_PREVIEW_PRODUCT'), 'Popup deve solicitar a pré-visualização.');
+assert.ok(content.includes('DSI_PREVIEW_PRODUCT'), 'Content script deve responder à pré-visualização.');
+assert.ok(popup.includes('AbortController'), 'Chamadas à API devem ter timeout.');
+assert.ok(popup.includes('isCapturing'), 'Captura deve evitar cliques duplicados.');
+assert.ok(popup.includes('renderPreview'), 'Popup deve apresentar pré-visualização.');
+console.log('OK: contrato estático da extensão v0.8.1.');
