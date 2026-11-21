@@ -102,7 +102,7 @@ def load_access_token():
 
 LOCAL_ACCESS_TOKEN = load_access_token()
 
-app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="1.0.2", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
@@ -277,7 +277,7 @@ def dashboard():
 def health():
     with SessionLocal() as db:
         db.execute(select(1))
-    return {"status": "ok", "service": "dsi-api", "version": "1.0.0", "database": "connected"}
+    return {"status": "ok", "service": "dsi-api", "version": "1.0.2", "database": "connected"}
 
 
 def prepare_product_values(payload: ProductIn) -> dict:

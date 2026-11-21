@@ -1,153 +1,258 @@
-<p align="center">
-  <img src="assets/logo-dsi.png" alt="DSI — Dropshipping Intelligence" width="780" />
-</p>
+# DSI v1.0.2 — Correção do pareamento Firefox
 
-<h1 align="center">DSI — Dropshipping Intelligence</h1>
+O popup agora recupera a chave de dois armazenamentos da origem da extensão. Se `browser.storage.local` falhar, utiliza armazenamento local alternativo; se ambos falharem, permite conexão na sessão atual e apresenta uma mensagem objetiva. A API **continua exigindo autenticação**. O botão Desconectar limpa ambos os armazenamentos.
 
-<p align="center">
-  Pesquisa e inteligência de produtos para dropshipping com uma extensão Firefox, uma API local e um dashboard de análise.
-</p>
+**Atualização:** mantenha `data/dsi.db` e `data/.dsi_access_token` (NÃO distribua o arquivo da chave). Reinicie o servidor, carregue/recarregue a extensão e cole a chave uma vez. Extensões temporárias removidas e reinstaladas podem ter seu armazenamento apagado. Se o Firefox impedir ambos os armazenamentos, revise o perfil, permissões e modo privado.
 
-<p align="center">
-  <img alt="Versão" src="https://img.shields.io/badge/vers%C3%A3o-1.0.0-blue" />
-  <img alt="Estado" src="https://img.shields.io/badge/status-release%20candidate-ffb020" />
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB" />
-  <img alt="FastAPI" src="https://img.shields.io/badge/API-FastAPI-009688" />
-  <img alt="Firefox" src="https://img.shields.io/badge/extens%C3%A3o-Firefox-FF7139" />
-  <img alt="Banco" src="https://img.shields.io/badge/banco-SQLite-07405E" />
-</p>
+**Atenção:** esta versão exige validação final no Firefox da máquina do usuário antes de ser considerada pronta para publicação. Leia `SOLUCAO_DE_PROBLEMAS.md`.
 
-> [!IMPORTANT]
-> **Status: candidata de lançamento (v1.0.0).** A extensão ainda não está assinada/publicada na Mozilla e faltam testes finais de ponta a ponta em Windows + Firefox + AliExpress. Este repositório não é afiliado ao AliExpress.
+# Atualização v1.0.1 — Pareamento persistente Firefox
 
-## O que é o DSI?
+A chave da extensão é salva **antes** de verificar a API e restaurada na reabertura do popup. Não é necessário informá-la a cada sessão. Se a API ficar offline, clique em **Reconectar** após iniciar o DSI. Preserve `data/.dsi_access_token` e `data/dsi.db` ao atualizar; remover/reinstalar a extensão temporária pode apagar o armazenamento dela. Detalhes em `SOLUCAO_DE_PROBLEMAS.md`.
 
-O **DSI (Dropshipping Intelligence)** é uma aplicação **local** de apoio ao garimpo, catalogação e avaliação comercial de anúncios, começando pelo AliExpress. Durante a navegação, a extensão Firefox identifica dados presentes na página e os envia, mediante pareamento, a uma API FastAPI executada no próprio computador. Um dashboard reúne o catálogo, os custos estimados, o histórico e as decisões de pesquisa.
+### Novidades v0.18.0
+A página individual pode coletar uma galeria limitada a 16 imagens expostas no HTML/JSON-LD, link da loja e, quando explicitamente rotulada, a nota/feedback do fornecedor. Esses dados são exibidos no catálogo e não devem ser confundidos com as avaliações do anúncio. Em **Configurações**, há exportação CSV, backup manual e verificação de integridade SQLite.
 
-O propósito é ajudar a responder: **quais anúncios investigar, quais dados estão faltando, quanto uma operação *poderia* render e quais verificações precisam ser feitas antes de testar um produto?**
+**Ainda não pronto para publicação pública**: validação real Firefox/AliExpress, pareamento/autenticação da API local e revisão das permissões do navegador continuam pendentes.
 
-### Funcionalidades principais
+# v0.18.0 — Início simplificado e diagnóstico local
 
-| Módulo | O que oferece |
-| --- | --- |
-| **Coleta Firefox** | Captura individual e lotes de até 40 anúncios já carregados na página; ignora novas coletas em lote do mesmo produto por 24 h |
-| **Produtos** | Catálogo, favoritos, busca, categorias personalizadas, cores, renomeação e organização em lote |
-| **Radar** | Comparações dentro de categorias, cobertura de dados, avaliações, pedidos informados e faixas de preço |
-| **Histórico** | Registros de preços, mudanças observadas e alertas relacionados |
-| **Custos e Margens** | Simulação de compra, frete, taxas, tributos informados, preço de venda, margem, ROI e cenários de estresse |
-| **Oportunidades** | Triagem por margem simulada, informações faltantes e ações para prosseguir com a pesquisa |
-| **Mesa de Pesquisa** | Etapas de investigação, prioridades, checklist, observações e evidências declaradas pelo usuário |
-| **Configurações** | Pareamento local, backup SQLite, exportação CSV, verificação de integridade e limpeza confirmada |
+O DSI continua com **aplicativo local Python/FastAPI + SQLite + extensão Firefox**. No Windows, execute `Instalar e iniciar DSI.bat` apenas na primeira instalação; depois use `Iniciar DSI.bat`. O iniciador abre o painel, usa somente `127.0.0.1:8000`, evita duas instâncias e não altera `data/dsi.db` diretamente. `Diagnosticar DSI.bat` verifica Python, dependências, servidor e porta sem iniciar a API. Veja **SOLUCAO_DE_PROBLEMAS.md** para passos detalhados.
 
-> [!NOTE]
-> O DSI distingue **informação observada**, **dado ausente** e **premissa de simulação**. Avaliações, pedidos e informações de fornecedores podem não estar disponíveis em todos os layouts; **estimativas de margem não são garantia de lucro**.
+A janela de terminal deve permanecer aberta durante o uso. Esta versão não é um EXE assinado e ainda requer Python na máquina. A API local ainda não possui autenticação; não a exponha à internet. O Firefox requer carregamento temporário da extensão de desenvolvimento até a preparação da distribuição pública.
 
-## Interface
+## v0.14.0 — Qualidade de coleta e organização em lote
 
-As imagens abaixo são **prévias de desenvolvimento com dados de demonstração**, registradas em versões anteriores. O visual e os recursos exibidos podem diferir da candidata v1.0.
+- `GET /intelligence/collection-quality?category=...`: cobertura objetiva de 10 campos, por categoria.
+- `PUT /products/organization/bulk`: altera categoria e/ou cor de até 200 produtos, sem modificar nomes.
+- Campos `apply_category` e `apply_color` precisam ser explicitamente ativados; valores `null` restauram o campo original.
+- A operação é atômica: se algum ID não existir, nenhum produto é alterado.
+- Não modifica o esquema SQLite nem apaga dados existentes.
+- **Pré-publicação:** ainda exige revisão de permissões, consentimento e segurança do servidor local. Não publicar o pacote de desenvolvimento diretamente no AMO.
 
-<details open>
-<summary><strong>Radar de garimpo</strong> — categorias, indicadores e comparação</summary>
+## v0.13.0 — Coleta progressiva, cooldown de 24 horas
 
-![Prévia do Radar de Garimpo, v0.9](assets/screenshots/radar.png)
+1. Abra uma listagem do AliExpress e clique em **Coletar produtos desta página**. A extensão verifica **todos os cards já presentes no DOM**, não apenas os primeiros 40.
+2. O lote contém **até 40 IDs não coletados em lote nas últimas 24 horas**. Após salvar, o popup apresenta automaticamente os próximos elegíveis.
+3. Ao rolar a página do AliExpress, clique em **Atualizar lista após rolar** para reconhecer os anúncios recém-carregados. Não há scroll automático.
+4. O bloqueio usa o **ID do AliExpress**, independente de qual categoria ou busca foi usada, e o prazo é de 24 horas corridas desde a captura em lote bem-sucedida.
+5. O banco distingue recapturas individuais e sessões em lote; o cooldown **só restringe a coleta em lote**. Sessões rejeitadas pelo cooldown não atualizam produto nem histórico.
+6. Backend: `POST /collection-eligibility` para consultar IDs bloqueados; `POST /collection-sessions` também verifica o bloqueio de forma autoritativa. Uma migração aditiva cria `last_batch_collected_at` com backup consistente prévio em `data/backups/` quando necessário.
 
-</details>
+**Limite real:** o leitor não força novos anúncios a aparecer: somente reconhece cards que o site já carregou e ainda mantém no DOM. Páginas com virtualização podem descarregar cards antigos. A contagem de 40 é por envio, não por rolagem ou por dia. Produtos anteriores à v0.13 não possuem histórico de cooldown e, portanto, tornam-se elegíveis para a primeira coleta em lote após a atualização.
 
-<details>
-<summary><strong>Produtos</strong> — filtros e organização em blocos</summary>
+## v0.11.0 — Organização manual e categorias mais confiáveis
 
-![Prévia da seção Produtos, v0.17](assets/screenshots/produtos.png)
+- No dashboard, clique em **Organizar** no card do produto, na tabela do Radar ou no comparador.
+- Defina **nome personalizado**, **categoria própria** e **cor da borda**. A categoria digitada aparece como sugestão em futuras edições, mas não é uma taxonomia automática imposta pelo sistema.
+- Nome/categoria capturados são preservados como fonte original; a personalização tem prioridade em **Produtos**, **Radar**, **Custos**, **filtros** e **estatísticas**.
+- Novas capturas do mesmo anúncio **não apagam** os valores manuais. Para restaurar a fonte, deixe o nome/categoria vazios e selecione **Sem cor**.
+- A categoria de captura tenta ler apenas *breadcrumbs* identificados, não menus de navegação globais; categorias ausentes ficam sem classificação até serem definidas.
+- Endpoint: `PUT /products/{id}/organization` com `manual_title`, `manual_category` e `border_color` (`#RRGGBB` ou `null`). Envia os três campos, substituindo a personalização anterior.
+- Migração aditiva: `manual_title`, `manual_category`, `border_color` e índice de categoria manual; o ZIP não inclui `data/dsi.db`.
 
-</details>
+**Atualização:** faça cópia de `data/dsi.db`, preserve a pasta `data` e atualize apenas arquivos de código. Reinicie a API e recarregue a extensão Firefox. Sem acesso a uma sessão real do AliExpress, a extração de categorias em páginas reais ainda precisa ser validada.
 
-<details>
-<summary><strong>Custos e margens</strong> — simulações por anúncio</summary>
+# DSI — Dropshipping Intelligence 0.13.0
 
-![Prévia da seção Custos, v0.10](assets/screenshots/custos.png)
+Extensão Firefox + API Python local + painel web para garimpar, catalogar e analisar produtos do AliExpress, com favoritos persistentes, histórico de preços, alertas e sessões de coleta em lote.
 
-</details>
+## Versão 0.9.0 — Radar de garimpo e coleta enriquecida
 
-<details>
-<summary><strong>Mesa de Pesquisa</strong> — acompanhamento e verificação</summary>
+- O dashboard agora inicia em **Radar de garimpo**, com interface mais densa e voltada para tomada de decisão: filtros por categoria, busca por produto ou fornecedor, classificação por evidência, tabela de comparação, faixa de preços em BRL, mediana por categoria, quantidade de dados conhecidos e comparador de até 3 anúncios.
+- **Não misturamos preços ou avaliações em uma média geral entre categorias no Radar.** O painel inicia na categoria mais representada; use o seletor para comparar outros nichos. Selecionar "Todas" mostra o panorama por categoria, sem um preço mediano global.
+- Listagens do AliExpress passam a reconhecer avaliações, contagem de opiniões e pedidos quando aparecem com **rótulos identificáveis** em português ou inglês, como `★ 4,8`, `1,2 mil avaliações`, `3 mil vendidos`, `4.9 (128)`, `128 reviews`, `2.5K sold`. Suporta números compactos (`mil`, `K`, `M`) sem confundir nota e volume.
+- Captura enriquecida quando visíveis: **desconto explicitamente anunciado**, preço original riscado (se reconhecida a mesma moeda), frete descrito, texto de estimativa de entrega e fornecedor identificado pelo elemento do card. Esses dados aparecem no comparador de anúncios.
+- Recapturas parciais **não apagam** preço anterior, categoria, nota, vendedor nem outros campos já conhecidos. Capturas sem novo preço não geram uma observação histórica repetida.
+- Endpoint `GET /intelligence/radar?limit=2000` com limite máximo de 5.000 produtos. A interface indica quando a análise não cobre todo o catálogo.
+- Banco atualizado por **migração aditiva** para os quatro novos campos (`original_price`, `discount_percent`, `shipping_text`, `delivery_text`), sem apagar nem recriar o banco existente.
 
-![Prévia da Mesa de Pesquisa, beta v0.20](assets/screenshots/mesa-pesquisa.png)
+**Precisão e limites:** os dados são transcritos do conteúdo visível na aba aberta. O AliExpress altera layout, idioma e informações por região. Campos não reconhecidos são mantidos em branco (—); não simulamos volume de vendas ou lucratividade. Desconto é uma afirmação do anúncio, não uma auditoria de preço. Uma contagem de pedidos exibida não comprova demanda futura. Valores cambiais são indicativos e não incluem frete, impostos ou tarifas. Comparação de preços exige categoria e moeda coerentes; produtos e variantes podem continuar sendo diferentes mesmo no mesmo nicho.
 
-</details>
+## Revisão técnica 0.8.1 — Otimização e dashboard
 
-## Fluxo de trabalho
+- Centralizada a preparação e gravação de produtos em uma única rotina compartilhada pela captura individual e pela coleta em lote, evitando divergência entre os dois fluxos.
+- Cada item da coleta em lote agora é processado em uma transação isolada; uma falha de persistência em um produto não invalida os demais itens do lote.
+- Indicadores do dashboard passaram a usar agregações SQL, evitando carregar todos os produtos para calcular contagens, categorias e qualidade média.
+- Corrigida a ordenação por preço para manter produtos sem conversão no final, tanto em ordem crescente quanto decrescente.
+- Removida uma execução redundante da migração na inicialização.
+- Dashboard redesenhado com sidebar escura, área clara, cartões, espaçamento e estados responsivos mais consistentes. IDs e fluxos JavaScript existentes foram preservados.
 
-```text
-Navegar no AliExpress
-         ↓
-Capturar anúncios com a extensão
-         ↓
-Organizar por categorias e revisar campos ausentes
-         ↓
-Comparar dados, custos e oportunidades
-         ↓
-Registrar verificações na Mesa de Pesquisa
-         ↓
-Decidir: investigar / testar / aprovar / descartar
+## Novidades da versão 0.8.0 — Sessões automatizadas de coleta
+
+- Na extensão Firefox, abra uma página de busca/categoria do AliExpress e use **Sessão de garimpo**.
+- A extensão examina os produtos já carregados na página, consulta quais estão bloqueados por 24h e envia até 40 elegíveis por lote. Após rolar, use **Atualizar lista após rolar**.
+- O backend valida URLs e dados, deduplica pelo ID do AliExpress e atualiza produtos já existentes.
+- Cada lote gera um registro persistente em `collection_sessions`, com totais encontrados, novos, atualizados e ignorados.
+- O dashboard ganhou a área **Coleta automatizada**, com instruções e histórico das sessões.
+- A coleta é acionada pelo usuário na aba aberta. Não há navegação automática entre páginas, coleta em segundo plano, nem tentativa de contornar login, CAPTCHA, bloqueios ou controles do marketplace.
+
+## Novidades da versão 0.7.0 — Produtos favoritos
+
+- Marque/desmarque produtos com o botão **♡ Favoritar** nos cards da visão geral e do catálogo.
+- A visão geral tem uma seção com seus produtos favoritos.
+- A página **Favoritos** reúne todos os produtos marcados e mostra a contagem atual.
+- A seleção fica salva no SQLite e permanece após reiniciar a API ou atualizar o navegador.
+- A migração adiciona apenas `products.is_favorite`; produtos existentes começam como não favoritos. Nenhum dado anterior é removido.
+- Novos endpoints: `PUT /products/{id}/favorite` e `GET /favorites`.
+
+## Novidades da extensão Firefox 0.6.0
+
+- Pré-visualização do título, preço e vendedor antes de adicionar o produto.
+- Botão de captura condicionado à disponibilidade da API e à validação dos dados da página.
+- Captura usa o mesmo conjunto de dados apresentado na pré-visualização.
+- Timeout nas chamadas à API, botão de reconexão e proteção contra cliques repetidos.
+- Mensagens mais claras para páginas incompatíveis, falhas de extração e indisponibilidade do backend.
+- A API 0.9.0 mantém compatibilidade com os endpoints anteriores.
+
+## Novidades da extensão Firefox 0.5.0
+
+- Popup redesenhado com estado da API e identificação da página de produto.
+- Captura e atualização do produto com retorno da qualidade dos dados.
+- Consulta dos seis registros mais recentes do histórico após a captura.
+- Resumo de produtos com histórico, observações e alertas não lidos.
+- Lista de alertas recentes com ação para marcá-los como lidos.
+- Atualização manual dos indicadores do monitoramento.
+
+Esta seção documenta a evolução da extensão na v0.5.0; os recursos de captura permanecem preservados na v0.9.0.
+
+## Novidades da versão 0.4.0
+
+- **Histórico de preços:** cada nova captura com preço válido gera uma observação vinculada ao produto.
+- **Detecção de alterações:** compara a observação atual com a anterior quando a moeda é a mesma.
+- **Alertas:** registra aumento ou redução de preço, percentual de variação quando calculável e estado de leitura.
+- **Dashboard:** botão “Histórico” nos cartões, gráfico simples e lista cronológica; painel com alertas recentes.
+- **API:** endpoints para consultar histórico, listar/marcar alertas e consultar resumo do monitoramento.
+- **Migração aditiva:** cria as novas tabelas `price_history` e `price_alerts`; não remove nem recria `data/dsi.db` nem a tabela de produtos existente.
+
+## Importante: como funciona o monitoramento
+
+Nesta versão, o monitoramento é **baseado em novas capturas**. O DSI não consulta automaticamente páginas do AliExpress em segundo plano: para atualizar o histórico, abra a página do produto no Firefox e capture novamente com a extensão. Isso evita prometer uma coleta automática que ainda não foi implementada e respeita os limites e controles do marketplace. Uma rotina automática futura dependerá de fonte de dados permitida e estável (preferencialmente API oficial), agendamento, limites e tratamento de falhas.
+
+As observações são armazenadas em moeda original. Alterações só geram alerta comparável quando a moeda atual e a anterior são iguais. Se a moeda mudar ou estiver ausente, não se calcula variação percentual.
+
+## Requisitos
+
+- Windows 10/11
+- Python 3.10 ou superior
+- Mozilla Firefox
+
+## Atualização no Windows
+
+1. Pare o servidor com `Ctrl + C`.
+2. Faça uma cópia de segurança da pasta `data` (principalmente `data/dsi.db`).
+3. Extraia o ZIP e substitua os arquivos do projeto. **Preserve a pasta `data` e o banco `dsi.db`.**
+4. No VS Code, abra a raiz da pasta `DSI` e execute:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 ```
 
-## Começando no Windows
+Se ainda não existir ambiente virtual:
 
-**Requisitos:** Windows, **Python 3.10 ou superior** e Firefox. O pacote local ainda **não** é um instalador Windows nativo nem assinado.
-
-1. Obtenha os arquivos do **projeto local** e o pacote de desenvolvimento da extensão na distribuição do projeto. Não há link oficial de download nem release publicado configurado neste README.
-2. Extraia o projeto. Se estiver atualizando uma instalação existente, **faça backup de `data/dsi.db` e preserve toda a pasta `data/`**.
-3. Na primeira execução, abra **`Instalar e iniciar DSI.bat`**. Nas próximas, use **`Iniciar DSI.bat`**.
-4. Acesse **http://127.0.0.1:8000/dashboard**. Mantenha aberta a janela que executa o servidor.
-5. Para diagnosticar problemas de inicialização, execute **`Diagnosticar DSI.bat`** e consulte [`SOLUCAO_DE_PROBLEMAS.md`](SOLUCAO_DE_PROBLEMAS.md), quando disponível no projeto principal.
-
-### Carregando e conectando a extensão no Firefox (teste)
-
-A extensão v1.0.0 **ainda não é assinada** para instalação permanente. Para testes locais:
-
-1. Abra `about:debugging` → **Este Firefox** → **Carregar extensão temporária**.
-2. Selecione o arquivo `manifest.json` na pasta `extension/` extraída do projeto.
-3. Com o aplicativo local funcionando, abra **Configurações** no dashboard e copie a chave de pareamento.
-4. Abra o popup da extensão, informe a chave e conecte.
-5. Visite uma página do AliExpress e realize uma captura de teste. Para lotes posteriores, role a página e atualize a lista de anúncios identificados.
-
-A coleta progressiva considera os anúncios **já presentes na página**; não força carregamento de itens por rolagem automática e não deve contornar restrições de acesso do site.
-
-## Arquitetura
-
-```text
-extension/           Firefox WebExtension (JavaScript)
-    ↕ HTTP local autenticado
-backend/             Python + FastAPI
-    ↕
-data/dsi.db          SQLite (dados locais; não versionar)
-    ↑
-dashboard/           HTML + CSS + JavaScript
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-### Tecnologias
+Na primeira inicialização da v0.4.0, o backend cria as tabelas de histórico automaticamente. Na v0.7.0, adiciona a coluna de favoritos; na v0.8.0, cria a tabela de sessões de coleta se ainda não existir. A migração é aditiva. Mesmo assim, mantenha o backup antes da atualização.
 
-**Python, FastAPI, SQLite, HTML, CSS, JavaScript e Firefox WebExtensions.** A extensão comunica-se com a API local em `127.0.0.1:8000` e utiliza uma chave de pareamento. Este modelo não substitui a necessidade de manter navegador, sistema e dependências atualizados.
+## Painel e documentação
 
-## Privacidade, segurança e limitações
+- Dashboard: http://127.0.0.1:8000/dashboard
+- API: http://127.0.0.1:8000/docs
+- Saúde: http://127.0.0.1:8000/health
 
-- A API é projetada para rodar **localmente**, não para exposição pública na rede.
-- **Nunca envie para o GitHub:** `data/dsi.db`, backups, tokens, chaves de pareamento, `.venv/`, logs privados ou arquivos de configuração com segredos.
-- A captura depende da apresentação e dos dados visíveis/estruturados nas páginas do AliExpress. Alguns campos podem permanecer vazios ou variar por região.
-- Nota do anúncio e avaliação do fornecedor são informações distintas.
-- Impostos, frete, comissões e demais despesas precisam ser confirmados ou configurados antes de tomar decisões comerciais.
-- Utilize a extensão em conformidade com os termos de uso das plataformas acessadas e com a legislação aplicável.
-- Consulte [`PRIVACIDADE.md`](PRIVACIDADE.md) e [`PUBLICACAO.md`](PUBLICACAO.md) no projeto completo para detalhes e checklist de distribuição.
+## Endpoints principais
 
-## Estado de lançamento e próximos passos
+| Método | Endpoint | Finalidade |
+|---|---|---|
+| GET | `/dashboard` | Painel visual |
+| GET | `/health` | Estado da API e banco |
+| POST | `/products` | Salvar/atualizar produto e registrar observação de preço |
+| GET | `/products` | Catálogo com filtros e ordenação |
+| GET | `/products/{id}` | Detalhes do produto |
+| PUT | `/products/{id}/favorite` | Marcar/desmarcar favorito (`{"is_favorite": true/false}`) |
+| GET | `/favorites` | Listar produtos favoritos |
+| POST | `/collection-sessions` | Validar e salvar lote de produtos coletados pela extensão |
+| GET | `/collection-sessions` | Consultar histórico de sessões de coleta |
+| GET | `/products/{id}/history` | Histórico de preços do produto |
+| GET | `/alerts` | Listar alertas (`?unread_only=true`) |
+| PUT | `/alerts/{id}/read` | Marcar alerta como lido |
+| GET | `/monitoring/summary` | Resumo das observações e alertas |
+| PUT | `/products/{id}/currency` | Corrigir moeda de um produto |
+| GET | `/intelligence/radar` | Análise do catálogo para comparações por categoria (limite explícito) |
+| GET | `/stats` | Indicadores do catálogo |
+| GET | `/categories` | Categorias identificadas |
+| GET | `/exchange-rates` | Taxas de conversão para BRL |
 
-A versão **1.0.0 é uma release candidate**. Antes de anunciar disponibilidade pública, ainda são necessários testes reais no Windows/Firefox/AliExpress, revisão de licenças e permissões, validação do pacote Firefox, identificador definitivo da extensão e **assinatura pela Mozilla**.
+## Conversão cambial
 
-**Próximas evoluções previstas:** comparação de anúncios equivalentes, melhor navegação em catálogos grandes, análise da proveniência dos dados e monitoramento mais refinado — sujeitas a validação técnica.
+A conversão para BRL continua sendo uma referência indicativa via Frankfurter (referência BCE). Não inclui spread, IOF, frete, tributos, tarifas ou cupons. Moeda ausente não é inferida automaticamente.
 
-## Contribuições e licença
+## Atualizar extensão Firefox (0.10.0)
 
-Sugestões, relatórios de bugs e contribuições são bem-vindos conforme a política do mantenedor. **A licença ainda deve ser definida pelo proprietário antes da divulgação como código open source.** Não presuma que este projeto usa MIT ou outra licença sem um arquivo `LICENSE` válido no repositório.
+1. Acesse `about:debugging#/runtime/this-firefox`.
+2. Remova a extensão temporária antiga, se necessário.
+3. Clique em **Carregar extensão temporária...** e selecione `extension/manifest.json`.
+4. Atualize a aba do AliExpress antes de capturar.
+5. O popup permite capturar um produto individual ou iniciar uma sessão de coleta em lote numa página de busca/categoria. O dashboard registra o histórico das sessões.
 
----
+## Limitações conhecidas e próximos passos
 
-<p align="center"><strong>DSI — mais evidências, menos achismos no garimpo de produtos.</strong></p>
+- A sessão em lote coleta somente itens já carregados na página aberta; para mais resultados, role a listagem e execute outra sessão. Não existe navegação automática entre páginas ou coleta periódica em segundo plano.
+- A extração depende da estrutura atual da página do AliExpress e pode não preencher todos os campos.
+- A API é local e não possui autenticação. Não a exponha diretamente à internet.
+- Próxima etapa recomendada: conferir a coleta real nas versões/idiomas do AliExpress usados pelo usuário e registrar exemplos de cards não capturados para ajustar seletores com segurança; validar cenários com documentos reais de frete, tarifas e tributação.
+- A nova análise prioriza comparação **descritiva**, sem nota de "produto vencedor" inventada. A falta de evidência não equivale a avaliação negativa do produto.
+
+## v0.10.0 — Custos e margens por produto
+
+O menu **Custos e margens** permite selecionar um item do catálogo, preencher uma simulação unitária e comparar cenários salvos **por categoria**. O DSI preserva todos os produtos e recursos das versões anteriores.
+
+**Custos configuráveis (BRL/unidade):** preço de compra manual (opcional; na ausência, usa o preço coletado convertido), frete informado, alíquota hipotética de importação sobre compra + frete, custos de importação fixos, comissão de marketplace, tarifas de pagamento, tributos sobre venda, reserva de devolução, embalagem, anúncios/CPA e outros gastos. Também aceita preço de venda e meta de margem.
+
+**Resultados:** custo fixo unitário, taxas variáveis na venda, custo total, lucro estimado, margem sobre receita (`lucro / venda`), ROI sobre custo total (`lucro / custo`), preço de equilíbrio e preço necessário à meta de margem, quando viável. Teste de resistência: venda -10%, compra +10% e ambos. Barras de composição de custos.
+
+**Importante:** não existem alíquotas legais padronizadas na aplicação. Os campos percentuais iniciam em zero apenas como **premissas não verificadas**; confirme todos. Frete ausente permanece `null`, impedindo margem/lucro em vez de presumir frete grátis. Preço de venda ausente também impede calcular lucro. Um frete de `0` deve significar frete efetivamente grátis ou integralmente já tratado em outros custos. A ferramenta **não calcula tributos oficiais**, e a base de importação utilizada é uma simplificação configurável, não o cálculo da legislação brasileira. Verifique com profissional habilitado quando necessário.
+
+**Preço de compra usado:** se não houver preço manual, usa o **preço mais recente coletado e convertido para BRL**, portanto a simulação muda se o preço da captura ou o câmbio utilizado mudar. Taxas de câmbio de contingência são sinalizadas. Para preservar uma cotação efetiva, informe preço manual. A análise salva premissas, não um comprovante da compra ou uma cotação cambial congelada.
+
+**Persistência:** nova tabela `cost_scenarios` criada com `Base.metadata.create_all` no banco SQLite existente, sem apagar `data/dsi.db`. Um cenário editável por produto. Novos endpoints:
+
+- `GET /products/{id}/cost-analysis` — obtém análise ou cenário inicial incompleto.
+- `PUT /products/{id}/cost-analysis` — valida e grava as premissas (`CostInputs`).
+- `GET /intelligence/costs` — análises registradas para comparação por categoria.
+
+**Atualização:** faça backup da pasta `data`; substitua os arquivos do projeto, **nunca substitua ou delete o banco**; reinicie a API e recarregue a extensão no Firefox. Os endpoints anteriores permanecem. Testes `python tests/cost_analysis_test.py` e regressões existentes. O banco do usuário não acompanha o ZIP.
+
+
+### Configurações — limpar produtos (v0.12.0)
+No dashboard, abra **Configurações > Limpar produtos**, leia o aviso e digite `LIMPAR PRODUTOS`. O DSI cria um backup SQLite consistente em `data/backups/` antes da exclusão. São removidos produtos, nomes/categorias/cores manuais, favoritos, históricos, alertas, cenários de custo e sessões de coleta. O arquivo `data/dsi.db` e o esquema são preservados, assim como dados não relacionados ao catálogo (ex.: câmbio). **Não apague o diretório de backups** se desejar recuperar os dados depois. O backup não é restaurado automaticamente pela interface. Use somente em uma API local confiável; não exponha a porta 8000 publicamente.
+
+
+### v0.15 — Oportunidades
+Abra **Oportunidades** no dashboard para comparar anúncios de uma mesma categoria. A classificação usa margens de cenários financeiros salvos e não prevê vendas. Configure frete e preço de venda em **Custos & margens**.
+
+
+### Organização em blocos (v0.17)
+Abra Produtos, filtre ou clique numa categoria em Minhas categorias, selecione os cards e escolha Organizar selecionados. Digite ou escolha categoria pessoal, marque os campos a alterar e salve. Uma seleção pode ter até 200 itens; ela permanece ao trocar filtros. A navegação considera os 500 produtos carregados mais recentes; para catálogos maiores, a paginação deverá ser ampliada numa versão futura.
+
+
+## v0.19 — Mesa de pesquisa profissional
+
+- Nova aba **Mesa de pesquisa**, com etapas, prioridade, observações e filtros.
+- Decisões humanas persistem separadamente dos sinais coletados, nunca são inferidas por lucro ou pedidos.
+- `/intelligence/research` possui paginação SQL (`offset`, `limit`, `stage`, `category`).
+- `/products/{id}/research` salva a decisão individual.
+- `/intelligence/suppliers` agrupa exclusivamente por URL da loja, não compara produtos diferentes como se fossem equivalentes.
+- Migração **aditiva** para a tabela `research_decisions` com backup prévio; limpeza segura inclui esta tabela.
+- Antes de publicar, implementar autenticação/pareamento da API local e validar a extração em Firefox/AliExpress reais.
+
+
+## Pareamento da v1.0
+
+Abra o DSI com `Iniciar DSI.bat`, entre em **Configurações** e copie a chave local. Na extensão, abra **Conexão com DSI**, cole a chave e clique **Conectar**. A chave fica armazenada apenas na extensão Firefox; mantenha a pasta `data` entre atualizações. Veja `PUBLICACAO.md` e `PRIVACIDADE.md`.

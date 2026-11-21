@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix='dsi-settings-') as tmp:
     from models import Product,PriceHistory,PriceAlert,CollectionSession,CostScenario
     import main
     client=TestClient(main.app)
-    assert client.get('/health').json()['version']=='1.0.0'
+    assert client.get('/health').json()['version']=='1.0.2'
     assert client.post('/settings/clear-products',json={'confirmation':'apagar'}).status_code==422
     assert client.get('/settings/database').json()['products']==0
     with SessionLocal.begin() as db:

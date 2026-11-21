@@ -1,3 +1,11 @@
+## 1.0.1 — Correção de persistência da chave Firefox
+
+- A chave é salva no armazenamento local do Firefox antes da verificação da API.
+- Fechar/reabrir o popup, ficar offline ou reiniciar o DSI não apaga o pareamento.
+- Mensagens distinguem conexão indisponível, chave não aceita e ausência de chave.
+- A chave só é removida quando o usuário clica em **Desconectar**.
+- Para atualizações, preservar `data/.dsi_access_token` junto de `data/dsi.db`.
+
 # Changelog
 
 ## 1.0.0 — Candidata de lançamento (segurança e distribuição)

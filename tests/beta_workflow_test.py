@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='dsi-beta-') as tmp:
         con.execute("INSERT INTO products(id,url,title,source,data_quality,is_favorite,created_at,updated_at,category) VALUES (1,'https://www.aliexpress.com/item/100500123456789.html','Legado','aliexpress',0,0,'2026-11-20 10:00:00','2026-11-20 10:00:00','Capas')")
     import main
     client=TestClient(main.app)
-    assert client.get('/health').json()['version']=='1.0.0'
+    assert client.get('/health').json()['version']=='1.0.2'
     backups=list((Path(tmp)/'backups').glob('dsi-before-v0.20*'))
     assert backups
     with sqlite3.connect(backups[0]) as conn:

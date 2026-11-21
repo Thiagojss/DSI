@@ -23,8 +23,8 @@ def pack(target,files,base):
 
 def main():
     DIST.mkdir(exist_ok=True)
-    project=DIST/'DSI_v1.0.0_projeto_local.zip'
-    ext=DIST/'DSI_v1.0.0_firefox_nao_assinado.zip'
+    project=DIST/'DSI_v1.0.2_projeto_local.zip'
+    ext=DIST/'DSI_v1.0.2_firefox_nao_assinado.zip'
     src=[f for f in ROOT.rglob('*') if eligible(f)]
     hashes={}
     hashes[project.name]=pack(project,src,ROOT.parent)

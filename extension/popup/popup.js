@@ -14,6 +14,80 @@ let isCapturing = false;
 let listingProducts = [];
 let listingCandidates = [];
 const BATCH_SIZE = 40;
+const PAIR_STORAGE_KEY = "dsiPairingToken";
+const validPairingToken = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+
+// Firefox pode rejeitar storage.local em certos perfis/ambientes de extensão.
+// A segunda cópia permanece no armazenamento da ORIGEM DA EXTENSÃO (não da página).
+// Nunca guardar tokens em páginas do AliExpress ou enviá-los para domínios externos.
+function backupTokenRead() {
+  try { return { token: globalThis.localStorage?.getItem(PAIR_STORAGE_KEY) || "", available: true }; }
+  catch (error) { return { token: "", available: false, error }; }
+}
+function backupTokenSave(token) {
+  try {
+    if (!globalThis.localStorage) return false;
+    globalThis.localStorage.setItem(PAIR_STORAGE_KEY, token);
+    return globalThis.localStorage.getItem(PAIR_STORAGE_KEY) === token;
+  } catch (_) { return false; }
+}
+function backupTokenRemove() {
+  try { globalThis.localStorage?.removeItem(PAIR_STORAGE_KEY); return true; }
+  catch (_) { return false; }
+}
+async function savePairingToken(token) {
+  // Grava em ambos os armazenamentos, se possível; qualquer um deles basta.
+  let nativeSaved = false;
+  try {
+    if (browser?.storage?.local?.set) {
+      await browser.storage.local.set({ [PAIR_STORAGE_KEY]: token });
+      const restored = await browser.storage.local.get(PAIR_STORAGE_KEY);
+      nativeSaved = restored?.[PAIR_STORAGE_KEY] === token;
+    }
+  } catch (_) { /* aciona o armazenamento alternativo */ }
+  const fallbackSaved = backupTokenSave(token);
+  if (!nativeSaved && !fallbackSaved) {
+    throw new Error("O Firefox não permitiu salvar a chave. Verifique permissões e armazenamento do perfil.");
+  }
+  return nativeSaved ? "Firefox" : "alternativo";
+}
+async function readPairingToken() {
+  let nativeError = null;
+  let nativeToken = "";
+  try {
+    if (!browser?.storage?.local?.get) throw new Error("browser.storage.local indisponível");
+    const saved = await browser.storage.local.get(PAIR_STORAGE_KEY);
+    nativeToken = saved?.[PAIR_STORAGE_KEY] || "";
+  } catch (error) { nativeError = error; }
+  if (validPairingToken(nativeToken)) {
+    backupTokenSave(nativeToken);
+    return { token: nativeToken, location: "Firefox" };
+  }
+  const fallback = backupTokenRead();
+  if (validPairingToken(fallback.token)) {
+    // Não bloqueia o usuário se a restauração do armazenamento nativo falhar.
+    try { await browser?.storage?.local?.set?.({ [PAIR_STORAGE_KEY]: fallback.token }); }
+    catch (_) { /* segue conectado via armazenamento alternativo */ }
+    return { token: fallback.token, location: "alternativo" };
+  }
+  if (nativeError && !fallback.available) {
+    return { token: "", error: "Armazenamento da extensão indisponível. Teste em uma janela normal do Firefox e confira about:debugging." };
+  }
+  if (nativeToken || fallback.token) return { token: "", error: "A chave armazenada está em formato inválido. Cole uma nova chave." };
+  return { token: "" };
+}
+async function removePairingToken() {
+  let nativeRemoved = false;
+  try {
+    if (browser?.storage?.local?.remove) {
+      await browser.storage.local.remove(PAIR_STORAGE_KEY);
+      nativeRemoved = true;
+    }
+  } catch (_) { /* ainda tenta apagar a cópia alternativa */ }
+  const fallbackRemoved = backupTokenRemove();
+  if (!nativeRemoved && !fallbackRemoved) throw new Error("Não foi possível remover a chave salva.");
+}
+
 
 function showFeedback(message, type = "") {
   feedback.textContent = message;
@@ -44,23 +118,36 @@ async function api(path, options = {}) {
 }
 
 async function checkBackend() {
+  if (!pairingToken) {
+    backendAvailable = false;
+    apiStatus.textContent = "Não conectado · informe a chave local uma vez";
+    apiStatus.className = "status status-error";
+    $("pair-status").textContent = "Não pareado";
+    $("connection-help").hidden = false;
+    updateCaptureState(); updateListingState();
+    return false;
+  }
   try {
     const data = await api("/health");
-    if (!pairingToken) throw new Error("Informe a chave de conexão.");
     await api("/monitoring/summary");
     apiStatus.textContent = `API conectada · v${data.version || "?"}`;
     apiStatus.className = "status status-ok";
     backendAvailable = true;
+    $("pair-status").textContent = "Conectado";
     $("connection-help").hidden = true;
-  } catch (_) {
-    apiStatus.textContent = pairingToken ? "Sem conexão · confira a chave e o servidor" : "API não pareada · copie a chave no dashboard";
-    apiStatus.className = "status status-error";
+  } catch (error) {
+    // Falhas de rede, reinicialização da API ou alteração da chave NÃO apagam
+    // o pareamento salvo pelo usuário. Somente Desconectar pode removê-lo.
     backendAvailable = false;
+    const invalid = /401|pareamento necessário/i.test(error.message || "");
+    apiStatus.textContent = invalid
+      ? "Chave salva · não aceita pela API atual"
+      : "Chave salva · aplicativo local indisponível";
+    apiStatus.className = "status status-error";
+    $("pair-status").textContent = invalid ? "Verificar chave" : "Conexão pendente";
     $("connection-help").hidden = false;
   }
-  $("pair-status").textContent = backendAvailable ? "Conectado" : (pairingToken ? "Chave inválida ou API offline" : "Não pareado");
-  updateCaptureState();
-  updateListingState();
+  updateCaptureState(); updateListingState();
   return backendAvailable;
 }
 
@@ -336,24 +423,55 @@ $("refresh-listing-button").addEventListener("click", async () => {
 $("refresh-button").addEventListener("click", refreshAll);
 $("retry-button").addEventListener("click", refreshAll);
 
+// A chave é persistida ANTES da tentativa de conexão: fechar o popup ou
+// ficar offline jamais deve exigir colá-la novamente.
 $("pair-save").addEventListener("click", async () => {
- const token = $("pair-token").value.trim();
- if (!/^[a-f0-9]{64}$/.test(token)) { $("pair-feedback").textContent="Chave inválida. Copie a chave completa em Configurações."; return; }
- pairingToken=token;
- if (await checkBackend()) {
-   await browser.storage.local.set({ dsiPairingToken: token });
-   $("pair-token").value="";
-   $("pair-feedback").textContent="Conectado com sucesso.";
-   await Promise.all([loadMonitoring(),loadAlerts()]);
- } else { pairingToken=""; $("pair-feedback").textContent="Não foi possível validar. Confira a chave e inicie o DSI."; }
+  const token = $("pair-token").value.trim().toLowerCase();
+  if (!validPairingToken(token)) {
+    $("pair-feedback").textContent = "Chave inválida. Copie os 64 caracteres em Configurações.";
+    return;
+  }
+  const saveButton = $("pair-save");
+  saveButton.disabled = true;
+  try {
+    const location = await savePairingToken(token);
+    pairingToken = token;
+    $("pair-token").value = "";
+    $("pair-feedback").textContent = "Chave salva. Verificando a conexão...";
+    const connected = await checkBackend();
+    $("pair-feedback").textContent = connected
+      ? `Conectado. Chave persistida no armazenamento ${location}.`
+      : `Chave persistida no armazenamento ${location}. Inicie a API e clique em Reconectar.`;
+    if (connected) await Promise.allSettled([loadMonitoring(), loadAlerts()]);
+  } catch (error) {
+    // Caso o perfil impeça persistência, ainda permite USAR a chave nesta sessão.
+    pairingToken = token;
+    $("pair-feedback").textContent = `${error.message} A conexão nesta sessão ainda pode funcionar.`;
+    await checkBackend();
+  } finally { saveButton.disabled = false; }
 });
 $("pair-remove").addEventListener("click", async () => {
- pairingToken=""; await browser.storage.local.remove("dsiPairingToken");
- $("pair-token").value=""; $("pair-feedback").textContent="Pareamento removido.";
- await checkBackend();
+  try {
+    await removePairingToken();
+    pairingToken = "";
+    $("pair-token").value = "";
+    $("pair-feedback").textContent = "Pareamento removido deste Firefox.";
+    await checkBackend();
+  } catch (error) {
+    $("pair-feedback").textContent = error.message;
+  }
 });
-(async () => {
- const saved=await browser.storage.local.get("dsiPairingToken");
- pairingToken=saved.dsiPairingToken||"";
- await Promise.all([refreshAll(), inspectPage()]);
-})();
+async function restorePairing() {
+  const saveButton = $("pair-save");
+  saveButton.disabled = true;
+  try {
+    const result = await readPairingToken();
+    pairingToken = result.token;
+    if (pairingToken) $("pair-feedback").textContent = `Chave recuperada do armazenamento ${result.location}.`;
+    else if (result.error) $("pair-feedback").textContent = result.error;
+  } catch (error) {
+    $("pair-feedback").textContent = `Não foi possível restaurar a chave: ${error.message}`;
+  } finally { saveButton.disabled = false; }
+  await Promise.allSettled([refreshAll(), inspectPage()]);
+}
+void restorePairing();

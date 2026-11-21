@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory() as tmp:
     sys.path.insert(0,str(ROOT/'backend'))
     import main
     client=TestClient(main.app)
-    assert client.get('/health').json()['version']=='1.0.0'
+    assert client.get('/health').json()['version']=='1.0.2'
     payload={'title':'Capa X','url':'https://www.aliexpress.com/item/1005001234567890.html',
              'image_url':'https://ae01.alicdn.com/a.jpg','image_urls':['https://ae01.alicdn.com/a.jpg','https://ae01.alicdn.com/b.jpg'],
              'seller_name':'Loja X','seller_url':'https://www.aliexpress.com/store/123456',

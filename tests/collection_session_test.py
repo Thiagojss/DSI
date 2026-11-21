@@ -13,7 +13,7 @@ from auth_test_client import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").json()["version"] == "1.0.0"
+assert client.get("/health").json()["version"] == "1.0.2"
 
 base = {
     "title": "Luminária LED de teste",
