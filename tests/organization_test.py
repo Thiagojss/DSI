@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='dsi-org-') as tmp:
         conn.execute(text('ALTER TABLE products DROP COLUMN manual_category'))
         conn.execute(text('ALTER TABLE products DROP COLUMN border_color'))
         conn.execute(text("INSERT INTO products (id,source,title,url,category,data_quality,is_favorite,created_at,updated_at) VALUES (1,'aliexpress','Capa original','https://www.aliexpress.com/item/1005008888888888.html','Celulares',0,0,'2026-11-21','2026-11-21')"))
-    from fastapi.testclient import TestClient
+    from auth_test_client import TestClient
     import main
     from database import engine
     assert {'manual_title', 'manual_category', 'border_color'} <= {x['name'] for x in inspect(engine).get_columns('products')}

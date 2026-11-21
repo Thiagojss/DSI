@@ -4,7 +4,7 @@ from pathlib import Path
 with tempfile.TemporaryDirectory(prefix='dsi14-') as directory:
     os.environ['DSI_DATABASE_PATH'] = str(Path(directory)/'test.db')
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'backend'))
-    from fastapi.testclient import TestClient
+    from auth_test_client import TestClient
     import main
     c=TestClient(main.app)
     for i in range(2):

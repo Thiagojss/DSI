@@ -99,3 +99,23 @@ class CostScenario(Base):
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     inputs_json = Column(Text, nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class ResearchDecision(Base):
+    """Decisão humana; nunca inferida de indicadores de venda."""
+    __tablename__ = "research_decisions"
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    stage = Column(String(32), nullable=False, default="investigar", index=True)
+    priority = Column(String(12), nullable=False, default="normal")
+    notes = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class ResearchCheck(Base):
+    """Verificação manual rastreável; não implica confirmação automática."""
+    __tablename__ = "research_checks"
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    kind = Column(String(32), primary_key=True)
+    status = Column(String(16), nullable=False, default="pendente")
+    evidence = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)

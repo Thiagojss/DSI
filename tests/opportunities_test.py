@@ -1,7 +1,7 @@
 """Oportunidades: isolamento de categoria, campos ausentes e cálculo simulado."""
 import os,sys,tempfile
 from pathlib import Path
-from fastapi.testclient import TestClient
+from auth_test_client import TestClient
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'backend'))
 with tempfile.TemporaryDirectory(prefix='dsi-opportunities-') as tmp:

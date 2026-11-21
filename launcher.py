@@ -64,12 +64,12 @@ def install():
 
 def start(open_browser=True):
     existing = server_health()
-    if existing:
-        print('O servidor DSI já está ativo. Abrindo o painel existente.')
+    if existing and existing.get('version') == '1.0.0':
+        print('O servidor DSI v1.0.0 já está ativo. Abrindo o painel existente.')
         if open_browser: webbrowser.open(BASE_URL + '/dashboard')
         return 0
     if port_busy():
-        print('ERRO: a porta 8000 está ocupada por outro serviço. Não vou encerrá-lo nem substituir processos.')
+        print('ERRO: a porta 8000 está em uso, possivelmente por uma versão anterior do DSI. Feche o servidor antigo antes de iniciar a v1.0.0.')
         return 2
     if dependencies_missing():
         print('ERRO: dependências ausentes. Execute python launcher.py --install ou use Instalar e iniciar DSI.bat.')

@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "DSI - Dropshipping Intelligence",
-  "version": "0.18.0",
+  "version": "1.0.0",
   "description": "Captura produtos individuais ou lotes visíveis em páginas do AliExpress e organiza o garimpo no DSI.",
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "storage"
   ],
   "host_permissions": [
     "http://127.0.0.1:8000/*"
@@ -28,7 +29,17 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "dsi-local@example.invalid",
-      "strict_min_version": "109.0"
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "websiteContent"
+        ]
+      }
     }
+  },
+  "icons": {
+    "48": "assets/icon48.png",
+    "96": "assets/icon96.png",
+    "128": "assets/icon128.png"
   }
 }

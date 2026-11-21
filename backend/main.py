@@ -2,6 +2,9 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from pathlib import Path
 from threading import Lock
+import secrets
+from fastapi.responses import JSONResponse, HTMLResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 import sqlite3
 import os
 import json
@@ -14,7 +17,7 @@ from sqlalchemy import select, or_, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from database import Base, engine, SessionLocal, migrate_schema, DATABASE_PATH
-from models import Product, PriceHistory, PriceAlert, CollectionSession, CostScenario
+from models import Product, PriceHistory, PriceAlert, CollectionSession, CostScenario, ResearchDecision, ResearchCheck
 from collectors.aliexpress import normalize_product
 from analyzers.scoring import assess_data_quality
 from fx import get_rate_to_brl
@@ -39,36 +42,102 @@ def backup_before_schema_migration():
 
 backup_before_schema_migration()
 migrate_schema()
+
+def backup_before_research_migration():
+    if not DATABASE_PATH.exists():
+        return
+    with sqlite3.connect(f"file:{DATABASE_PATH.as_posix()}?mode=ro", uri=True, timeout=15) as src:
+        if src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_decisions'").fetchone():
+            return
+        if not src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'").fetchone():
+            return
+        directory = DATABASE_PATH.parent / "backups"
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"dsi-before-v0.19-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.db"
+        with sqlite3.connect(str(target), timeout=15) as dest:
+            src.backup(dest)
+        os.chmod(target, 0o600)
+
+backup_before_research_migration()
+def backup_before_beta_migration():
+    """Snapshot consistente antes da criação da tabela de verificações."""
+    if not DATABASE_PATH.exists():
+        return
+    with sqlite3.connect(f"file:{DATABASE_PATH.as_posix()}?mode=ro", uri=True, timeout=15) as src:
+        if src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_checks'").fetchone():
+            return
+        if not src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'").fetchone():
+            return
+        directory = DATABASE_PATH.parent / "backups"
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"dsi-before-v0.20-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.db"
+        with sqlite3.connect(str(target), timeout=15) as dest:
+            src.backup(dest)
+        os.chmod(target, 0o600)
+
+backup_before_beta_migration()
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="0.18.0")
+# A chave é exclusiva desta instalação e NÃO é enviada a sites externos.
+# Armazenada fora do ZIP, no diretório data (que deve ser preservado nas atualizações).
+TOKEN_PATH = DATABASE_PATH.parent / ".dsi_access_token"
+def load_access_token():
+    TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(TOKEN_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="ascii") as f:
+                f.write(secrets.token_hex(32) + "\n")
+        except Exception:
+            TOKEN_PATH.unlink(missing_ok=True)
+            raise
+    except FileExistsError:
+        pass
+    token = TOKEN_PATH.read_text(encoding="ascii").strip()
+    if len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+        raise RuntimeError("Chave local inválida. Não exclua o banco; corrija .dsi_access_token com segurança.")
+    if os.name != "nt":
+        os.chmod(TOKEN_PATH, 0o600)
+    return token
+
+LOCAL_ACCESS_TOKEN = load_access_token()
+
+app = FastAPI(title="DSI API", description="API local do Dropshipping Intelligence", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
     allow_origin_regex=r"moz-extension://[a-zA-Z0-9-]+",
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-DSI-Token"],
 )
 
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
 @app.middleware("http")
-async def validate_browser_origin(request, call_next):
-    # Navegadores enviam Origin em escritas entre contextos. Bloqueia origens
-    # externas mesmo se o cliente não estiver sujeito ao CORS.
+async def protect_local_api(request, call_next):
+    # Proteção contra DNS rebinding, acesso pela rede e acesso a dados por sites.
+    from urllib.parse import urlsplit
     origin = request.headers.get("origin")
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin:
-        from urllib.parse import urlsplit
+    path = request.url.path
+    if origin:
         parts = urlsplit(origin)
-        allowed = (origin in {"http://127.0.0.1:8000", "http://localhost:8000"}
-                   or (parts.scheme == "moz-extension" and parts.hostname
-                       and __import__("re").fullmatch(r"[a-zA-Z0-9-]+", parts.hostname)))
-        if not allowed:
-            from fastapi.responses import JSONResponse
+        allowed_origin = origin in {"http://127.0.0.1:8000", "http://localhost:8000"} or (
+            parts.scheme == "moz-extension" and parts.hostname is not None and
+            __import__("re").fullmatch(r"[a-zA-Z0-9-]+", parts.hostname) is not None
+        )
+        if not allowed_origin:
             return JSONResponse({"detail": "Origem não permitida."}, status_code=403)
+    if request.method != "OPTIONS" and path not in {"/", "/dashboard", "/health"}:
+        candidate = request.headers.get("X-DSI-Token", "")
+        if not secrets.compare_digest(candidate, LOCAL_ACCESS_TOKEN):
+            return JSONResponse({"detail": "Pareamento necessário. Copie a chave em Configurações do DSI."}, status_code=401)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
     return response
 
 
@@ -198,14 +267,17 @@ def home():
 
 @app.get("/dashboard", include_in_schema=False)
 def dashboard():
-    return dashboard_page()
+    # Token de acesso entregue apenas ao dashboard local; nunca salvo no HTML do ZIP.
+    html = (Path(__file__).resolve().parent.parent / "dashboard" / "index.html").read_text(encoding="utf-8")
+    html = html.replace("<!-- DSI_TOKEN_BOOTSTRAP -->", "<script>window.DSI_ACCESS_TOKEN=" + json.dumps(LOCAL_ACCESS_TOKEN) + ";</script>")
+    return HTMLResponse(html)
 
 
 @app.get("/health")
 def health():
     with SessionLocal() as db:
         db.execute(select(1))
-    return {"status": "ok", "service": "dsi-api", "version": "0.18.0", "database": "connected"}
+    return {"status": "ok", "service": "dsi-api", "version": "1.0.0", "database": "connected"}
 
 
 def prepare_product_values(payload: ProductIn) -> dict:
@@ -752,10 +824,17 @@ def list_cost_analyses(limit: int = Query(default=2000, ge=1, le=5000)):
 def intelligence_opportunities(limit: int = Query(default=2000, ge=1, le=5000), category: Optional[str] = None):
     """Ranking auditável: não transforma avaliações em vendas nem compara categorias diferentes."""
     with SessionLocal() as db:
-        total = db.scalar(select(func.count(Product.id))) or 0
-        products = db.scalars(select(Product).order_by(desc(Product.updated_at), desc(Product.id)).limit(limit)).all()
+        query = select(Product)
+        count_query = select(func.count(Product.id))
+        if category:
+            condition = func.coalesce(func.nullif(Product.manual_category, ""), Product.category, "Sem categoria") == category
+            query = query.where(condition)
+            count_query = count_query.where(condition)
+        total = db.scalar(count_query) or 0
+        products = db.scalars(query.order_by(desc(Product.updated_at), desc(Product.id)).limit(limit)).all()
         ids = [p.id for p in products]
         scenarios = {row.product_id: row for row in db.scalars(select(CostScenario).where(CostScenario.product_id.in_(ids))).all()} if ids else {}
+        decisions = {r.product_id: r for r in db.scalars(select(ResearchDecision).where(ResearchDecision.product_id.in_(ids)))} if ids else {}
         rows = []
         for product in products:
             p = serialize_product(product)
@@ -782,7 +861,7 @@ def intelligence_opportunities(limit: int = Query(default=2000, ge=1, le=5000), 
                          'profit_brl': financial['profit_brl'] if financial else None,
                          'stress_profit_brl': stress_profit, 'status': status, 'warnings': warnings,
                          'cost_assumptions': financial['zero_assumptions'] if financial else [],
-                         'estimated': True})
+                         'estimated': True, 'research_stage': decisions[product.id].stage if product.id in decisions else 'nao_avaliado'})
         # Margem não substitui qualidade; itens sem cenário permanecem visíveis no final.
         rows.sort(key=lambda r: (r['margin_pct'] is None, -(r['margin_pct'] or 0),
                                  -(r['review_count'] or 0), r['product_id']))
@@ -790,6 +869,202 @@ def intelligence_opportunities(limit: int = Query(default=2000, ge=1, le=5000), 
                 'ranking_basis': 'Margem simulada decrescente; avaliações apenas como desempate. Sem índice de demanda.',
                 'products': rows}
 
+
+# Pesquisa profissional: estados deliberados pelo usuário, sem scores inventados.
+RESEARCH_STAGES = ("investigar", "comparar_fornecedor", "validar_custos", "testar", "aprovado", "descartado")
+
+class ResearchDecisionIn(BaseModel):
+    stage: str = Field(default="investigar")
+    priority: str = Field(default="normal")
+    notes: str = Field(default="", max_length=4000)
+
+    @field_validator("stage")
+    @classmethod
+    def stage_valid(cls, value):
+        if value not in RESEARCH_STAGES:
+            raise ValueError("Etapa de pesquisa inválida.")
+        return value
+
+    @field_validator("priority")
+    @classmethod
+    def priority_valid(cls, value):
+        if value not in ("baixa", "normal", "alta"):
+            raise ValueError("Prioridade inválida.")
+        return value
+
+
+def serialize_research(product, decision, scenario=None):
+    return {"product_id": product.id, "title": product.manual_title or product.title,
+            "category": product.manual_category or product.category or "Sem categoria",
+            "url": product.url, "seller_name": product.seller_name, "seller_url": product.seller_url,
+            "seller_rating": product.seller_rating, "price": product.price, "currency": product.currency,
+            "rating": product.rating, "review_count": product.review_count, "orders_count": product.orders_count,
+            "stage": decision.stage if decision else "nao_avaliado",
+            "priority": decision.priority if decision else "normal",
+            "notes": decision.notes if decision else "",
+            "updated_at": decision.updated_at.isoformat() if decision and decision.updated_at else None,
+            "has_cost_scenario": bool(scenario),
+            "last_collected_at": product.collected_at.isoformat() if product.collected_at else None}
+
+RESEARCH_CHECK_TYPES = {
+    "fornecedor": "Conferir fornecedor e condições",
+    "custos": "Validar custos e margem",
+    "amostra": "Registrar teste de amostra",
+    "mercado": "Conferir mercado e concorrência",
+}
+RESEARCH_CHECK_STATUSES = ("pendente", "confirmado", "bloqueado")
+
+class ResearchCheckInput(BaseModel):
+    kind: str
+    status: str
+    evidence: str = Field(default="", max_length=2000)
+
+    @field_validator("kind")
+    @classmethod
+    def valid_kind(cls, value):
+        if value not in RESEARCH_CHECK_TYPES: raise ValueError("Verificação desconhecida")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, value):
+        if value not in RESEARCH_CHECK_STATUSES: raise ValueError("Estado de verificação inválido")
+        return value
+
+class ResearchCheckBatch(BaseModel):
+    checks: list[ResearchCheckInput] = Field(min_length=1, max_length=4)
+
+
+def checks_payload(db, product_id):
+    checks = {r.kind: r for r in db.scalars(select(ResearchCheck).where(ResearchCheck.product_id == product_id))}
+    rows = [{"kind": kind, "label": label,
+             "status": checks[kind].status if kind in checks else "pendente",
+             "evidence": checks[kind].evidence if kind in checks else "",
+             "updated_at": checks[kind].updated_at.isoformat() if kind in checks and checks[kind].updated_at else None}
+            for kind, label in RESEARCH_CHECK_TYPES.items()]
+    return {"product_id": product_id, "confirmed": sum(x["status"] == "confirmado" for x in rows),
+            "total": len(rows), "checks": rows}
+
+@app.get("/products/{product_id}/research-checks")
+def get_research_checks(product_id: int):
+    with SessionLocal() as db:
+        if not db.get(Product, product_id): raise HTTPException(404, "Produto não encontrado")
+        return checks_payload(db, product_id)
+
+@app.put("/products/{product_id}/research-checks")
+def update_research_checks(product_id: int, payload: ResearchCheckBatch):
+    if len({c.kind for c in payload.checks}) != len(payload.checks):
+        raise HTTPException(422, "Verificações duplicadas")
+    with SessionLocal.begin() as db:
+        if not db.get(Product, product_id): raise HTTPException(404, "Produto não encontrado")
+        for item in payload.checks:
+            check = db.get(ResearchCheck, (product_id, item.kind))
+            if not check:
+                check = ResearchCheck(product_id=product_id, kind=item.kind)
+                db.add(check)
+            check.status, check.evidence = item.status, item.evidence.strip()
+            check.updated_at = datetime.now(timezone.utc)
+        db.flush()
+        return checks_payload(db, product_id)
+
+@app.get("/intelligence/research")
+def research_queue(stage: Optional[str] = None, category: Optional[str] = None,
+                   limit: int = Query(default=500, ge=1, le=5000), offset: int = Query(default=0, ge=0)):
+    if stage and stage not in (*RESEARCH_STAGES, "nao_avaliado"):
+        raise HTTPException(422, "Etapa inválida")
+    with SessionLocal() as db:
+        # SQL-level pagination and filters, not a 500-item client cache.
+        stmt = (select(Product, ResearchDecision, CostScenario)
+                .outerjoin(ResearchDecision, ResearchDecision.product_id == Product.id)
+                .outerjoin(CostScenario, CostScenario.product_id == Product.id))
+        if stage == "nao_avaliado": stmt = stmt.where(ResearchDecision.product_id.is_(None))
+        elif stage: stmt = stmt.where(ResearchDecision.stage == stage)
+        if category: stmt = stmt.where(func.coalesce(func.nullif(Product.manual_category, ""), Product.category, "Sem categoria") == category)
+        total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = db.execute(stmt.order_by(desc(Product.updated_at), desc(Product.id)).offset(offset).limit(limit)).all()
+        items = [serialize_research(p, d, s) for p,d,s in rows]
+        if items:
+            check_rows = db.execute(select(ResearchCheck.product_id, ResearchCheck.status).where(ResearchCheck.product_id.in_([p["product_id"] for p in items]))).all()
+            confirmed = {}
+            for pid, state in check_rows:
+                if state == "confirmado": confirmed[pid] = confirmed.get(pid, 0) + 1
+            for item in items:
+                item["checklist_confirmed"] = confirmed.get(item["product_id"], 0)
+                item["checklist_total"] = len(RESEARCH_CHECK_TYPES)
+        return {"total": total, "offset": offset, "returned": len(rows),
+                "stages": list(RESEARCH_STAGES), "products": items}
+
+@app.put("/products/{product_id}/research")
+def update_research(product_id: int, payload: ResearchDecisionIn):
+    with SessionLocal.begin() as db:
+        product = db.get(Product, product_id)
+        if product is None: raise HTTPException(404, "Produto não encontrado")
+        decision = db.get(ResearchDecision, product_id)
+        if decision is None:
+            decision = ResearchDecision(product_id=product_id)
+            db.add(decision)
+        decision.stage, decision.priority, decision.notes = payload.stage, payload.priority, payload.notes.strip()
+        decision.updated_at = datetime.now(timezone.utc)
+        db.flush()
+        return serialize_research(product, decision)
+
+@app.get("/intelligence/research.csv")
+def export_research_csv(stage: Optional[str] = None):
+    """Exportação profissional: decisões humanas, origem e data; segura para planilhas."""
+    import csv, io
+    from fastapi.responses import Response
+    if stage and stage not in (*RESEARCH_STAGES, "nao_avaliado"):
+        raise HTTPException(422, "Etapa inválida")
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    fields = ("product_id", "title", "category", "url", "seller_name", "seller_url",
+              "price", "currency", "stage", "priority", "notes", "last_collected_at", "updated_at",
+              "fornecedor_status", "custos_status", "amostra_status", "mercado_status")
+    writer.writerow(fields)
+    with SessionLocal() as db:
+        stmt = select(Product, ResearchDecision).outerjoin(ResearchDecision, ResearchDecision.product_id == Product.id)
+        if stage == "nao_avaliado": stmt = stmt.where(ResearchDecision.product_id.is_(None))
+        elif stage: stmt = stmt.where(ResearchDecision.stage == stage)
+        check_states = {(c.product_id, c.kind): c.status for c in db.scalars(select(ResearchCheck))}
+        for product, decision in db.execute(stmt.order_by(Product.id)).yield_per(200):
+            row = serialize_research(product, decision)
+            for kind in RESEARCH_CHECK_TYPES:
+                row[kind + "_status"] = check_states.get((product.id, kind), "pendente")
+            writer.writerow(["'" + str(row[k]) if isinstance(row[k], str) and row[k].lstrip().startswith(("=", "+", "-", "@")) else row[k] for k in fields])
+    return Response(content="\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="dsi-mesa-pesquisa.csv"'})
+
+@app.get("/intelligence/suppliers")
+def supplier_comparison(category: Optional[str] = None, limit: int = Query(default=200, ge=1, le=2000)):
+    """Agrupa apenas por URL exata da loja. Não afirma equivalência dos produtos."""
+    with SessionLocal() as db:
+        stmt = select(Product).where(Product.seller_url.is_not(None), Product.seller_url != "")
+        if category: stmt = stmt.where(func.coalesce(func.nullif(Product.manual_category, ""), Product.category, "Sem categoria") == category)
+        products = db.scalars(stmt.order_by(desc(Product.updated_at)).limit(5000)).all()
+        groups = {}
+        for p in products:
+            url = p.seller_url.split("?")[0].rstrip("/")
+            row = groups.setdefault(url, {"seller_url": url, "seller_names": set(), "products": 0,
+                                          "categories": set(), "ratings": [], "positive_feedback": [], "product_ids": []})
+            row["products"] += 1
+            row["product_ids"].append(p.id)
+            if p.seller_name: row["seller_names"].add(p.seller_name)
+            row["categories"].add(p.manual_category or p.category or "Sem categoria")
+            if p.seller_rating is not None: row["ratings"].append(p.seller_rating)
+            if p.seller_positive_feedback_pct is not None: row["positive_feedback"].append(p.seller_positive_feedback_pct)
+        result = []
+        for row in groups.values():
+            result.append({"seller_url": row["seller_url"], "seller_names": sorted(row["seller_names"]),
+                           "products": row["products"], "categories": sorted(row["categories"]),
+                           "seller_rating_min": min(row["ratings"]) if row["ratings"] else None,
+                           "seller_rating_max": max(row["ratings"]) if row["ratings"] else None,
+                           "positive_feedback_min": min(row["positive_feedback"]) if row["positive_feedback"] else None,
+                           "positive_feedback_max": max(row["positive_feedback"]) if row["positive_feedback"] else None,
+                           "sample_product_ids": row["product_ids"][:10]})
+        result.sort(key=lambda r: (-r["products"], r["seller_url"]))
+        return {"total_suppliers": len(result), "returned": min(limit, len(result)),
+                "note": "Agrupamento por URL da loja, sem dedução de identidade ou equivalência entre anúncios. Notas são intervalos observados, não médias inventadas.",
+                "suppliers": result[:limit]}
 
 # Configurações locais: exclui registros, jamais o arquivo SQLite nem seu schema.
 _reset_lock = Lock()
@@ -806,7 +1081,9 @@ def database_settings():
                 "price_history": db.scalar(select(func.count(PriceHistory.id))) or 0,
                 "price_alerts": db.scalar(select(func.count(PriceAlert.id))) or 0,
                 "cost_scenarios": db.scalar(select(func.count(CostScenario.id))) or 0,
-                "collection_sessions": db.scalar(select(func.count(CollectionSession.id))) or 0}
+                "collection_sessions": db.scalar(select(func.count(CollectionSession.id))) or 0,
+                "research_decisions": db.scalar(select(func.count(ResearchDecision.product_id))) or 0,
+                "research_checks": db.scalar(select(func.count()).select_from(ResearchCheck)) or 0}
 
 
 class BackupRequest(BaseModel):
@@ -904,9 +1181,11 @@ def clear_products(payload: ClearCatalogRequest):
                     "price_alerts": db.scalar(select(func.count(PriceAlert.id))) or 0,
                     "cost_scenarios": db.scalar(select(func.count(CostScenario.id))) or 0,
                     "collection_sessions": db.scalar(select(func.count(CollectionSession.id))) or 0,
+                    "research_decisions": db.scalar(select(func.count(ResearchDecision.product_id))) or 0,
+                    "research_checks": db.scalar(select(func.count()).select_from(ResearchCheck)) or 0,
                 }
                 # Ordem respeita as relações mesmo quando foreign_keys=ON.
-                for model in (PriceAlert, PriceHistory, CostScenario, CollectionSession, Product):
+                for model in (PriceAlert, PriceHistory, CostScenario, ResearchCheck, ResearchDecision, CollectionSession, Product):
                     db.query(model).delete(synchronize_session=False)
         except SQLAlchemyError:
             raise HTTPException(status_code=503, detail="Falha na exclusão. Transação revertida; backup mantido.")

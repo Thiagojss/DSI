@@ -10,7 +10,7 @@ spec = importlib.util.spec_from_file_location('dsi_launcher', root / 'launcher.p
 launcher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(launcher)
 
-with patch.object(launcher, 'server_health', return_value={'service': 'dsi-api', 'status': 'ok', 'version': '0.18.0'}), patch.object(launcher, 'webbrowser') as browser:
+with patch.object(launcher, 'server_health', return_value={'service': 'dsi-api', 'status': 'ok', 'version': '1.0.0'}), patch.object(launcher, 'webbrowser') as browser:
     assert launcher.start() == 0
     browser.open.assert_called_once_with('http://127.0.0.1:8000/dashboard')
 with patch.object(launcher, 'server_health', return_value=None), patch.object(launcher, 'port_busy', return_value=True), patch.object(launcher, 'subprocess') as sub:

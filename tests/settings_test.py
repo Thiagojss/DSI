@@ -9,13 +9,13 @@ sys.path.insert(0,str(ROOT/'backend'))
 with tempfile.TemporaryDirectory(prefix='dsi-settings-') as tmp:
     path=Path(tmp)/'dsi.db'
     os.environ['DSI_DATABASE_PATH']=str(path)
-    from fastapi.testclient import TestClient
+    from auth_test_client import TestClient
     from sqlalchemy import select,func
     from database import SessionLocal, engine
     from models import Product,PriceHistory,PriceAlert,CollectionSession,CostScenario
     import main
     client=TestClient(main.app)
-    assert client.get('/health').json()['version']=='0.18.0'
+    assert client.get('/health').json()['version']=='1.0.0'
     assert client.post('/settings/clear-products',json={'confirmation':'apagar'}).status_code==422
     assert client.get('/settings/database').json()['products']==0
     with SessionLocal.begin() as db:
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='dsi-settings-') as tmp:
         db.add(CostScenario(product_id=p.id,inputs_json='{}'))
         db.add(CollectionSession(source_url='https://www.aliexpress.com/w/wholesale-phone.html',total_found=1))
     before=client.get('/settings/database').json()
-    assert all(value==1 for value in before.values()),before
+    assert all(value==1 for key,value in before.items() if key not in ("research_decisions", "research_checks")) and before["research_decisions"]==0 and before["research_checks"]==0,before
     response=client.post('/settings/clear-products',json={'confirmation':'LIMPAR PRODUTOS'})
     assert response.status_code==200,response.text
     r=response.json()

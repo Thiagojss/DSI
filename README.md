@@ -228,3 +228,19 @@ Abra **Oportunidades** no dashboard para comparar anúncios de uma mesma categor
 
 ### Organização em blocos (v0.17)
 Abra Produtos, filtre ou clique numa categoria em Minhas categorias, selecione os cards e escolha Organizar selecionados. Digite ou escolha categoria pessoal, marque os campos a alterar e salve. Uma seleção pode ter até 200 itens; ela permanece ao trocar filtros. A navegação considera os 500 produtos carregados mais recentes; para catálogos maiores, a paginação deverá ser ampliada numa versão futura.
+
+
+## v0.19 — Mesa de pesquisa profissional
+
+- Nova aba **Mesa de pesquisa**, com etapas, prioridade, observações e filtros.
+- Decisões humanas persistem separadamente dos sinais coletados, nunca são inferidas por lucro ou pedidos.
+- `/intelligence/research` possui paginação SQL (`offset`, `limit`, `stage`, `category`).
+- `/products/{id}/research` salva a decisão individual.
+- `/intelligence/suppliers` agrupa exclusivamente por URL da loja, não compara produtos diferentes como se fossem equivalentes.
+- Migração **aditiva** para a tabela `research_decisions` com backup prévio; limpeza segura inclui esta tabela.
+- Antes de publicar, implementar autenticação/pareamento da API local e validar a extração em Firefox/AliExpress reais.
+
+
+## Pareamento da v1.0
+
+Abra o DSI com `Iniciar DSI.bat`, entre em **Configurações** e copie a chave local. Na extensão, abra **Conexão com DSI**, cole a chave e clique **Conectar**. A chave fica armazenada apenas na extensão Firefox; mantenha a pasta `data` entre atualizações. Veja `PUBLICACAO.md` e `PRIVACIDADE.md`.

@@ -3,7 +3,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from fastapi.testclient import TestClient
+from auth_test_client import TestClient
 
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'backend'))

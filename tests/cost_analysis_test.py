@@ -2,7 +2,7 @@
 import os,sys,tempfile
 from pathlib import Path
 from decimal import Decimal
-from fastapi.testclient import TestClient
+from auth_test_client import TestClient
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'backend'))
 from services.costs import CostInputs, analyze_costs
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.environ['DSI_DATABASE_PATH']=str(Path(tmp)/'test.db')
     import main
     c=TestClient(main.app)
-    assert c.get('/health').json()['version']=='0.18.0'
+    assert c.get('/health').json()['version']=='1.0.0'
     a=c.post('/products',json={'title':'Cabo USB teste','url':'https://www.aliexpress.com/item/100500555666777.html','price':100,'currency':'BRL','category':'Acessórios'})
     assert a.status_code==200,a.text
     pid=a.json()['id']

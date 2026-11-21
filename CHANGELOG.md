@@ -1,3 +1,25 @@
+# Changelog
+
+## 1.0.0 — Candidata de lançamento (segurança e distribuição)
+- Token local persistente em `data/.dsi_access_token`, exigido em todas as rotas de dados da API.
+- Pareamento manual da extensão (Firefox storage); dashboard local injeta chave por sessão.
+- Host restrito, CORS controlado, bloqueio de origens indevidas, cabeçalhos anti-frame e sem cache.
+- Exportação CSV autenticada, manifesto com declaração de dados Mozilla e ícones.
+- Testes de regressão e documentação de publicação/privacidade.
+
+## v0.20.0 — Beta de estabilização
+- Checklists persistentes por produto: fornecedor, custos, amostra e mercado, com estado e evidência manual.
+- Oportunidades com busca, ordenação e ações para análise de custos e Mesa de pesquisa.
+- Corrigido filtro de categoria no backend de Oportunidades, aplicado antes da paginação/limite.
+- Migração aditiva com backup SQLite consistente antes da nova tabela; limpeza inclui verificações.
+- Mantém coleta, 24h, histórico, personalização, cenários financeiros e funcionalidades anteriores.
+- PENDENTE: autenticação local para distribuição; testes Firefox/AliExpress reais e instalação Windows.
+
+## v0.19.0 — Pesquisa profissional e referências open source
+- Fila de investigação, decisões, notas, prioridades e paginação real no backend.
+- Comparação cuidadosa por URL do fornecedor e backup antes da nova tabela.
+- Fontes e inspiração documentadas em OPEN_SOURCE_REFERENCIAS.md.
+
 ## v0.18.0 — Auditoria, imagens e fornecedor
 - Campos de galeria (até 16 URLs), link da loja e avaliações específicas da loja, sem confundir com nota do anúncio.
 - Coleta dos dados existentes em DOM/JSON-LD; não percorre sites automaticamente. Campos ausentes permanecem nulos.

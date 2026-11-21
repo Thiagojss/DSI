@@ -1,4 +1,4 @@
-"""Teste de fumaça da API v0.18.0. Usa banco temporário; não toca em data/dsi.db."""
+"""Teste de fumaça da API v1.0.0. Usa banco temporário; não toca em data/dsi.db."""
 import os
 import sys
 import tempfile
@@ -9,11 +9,11 @@ sys.path.insert(0, str(ROOT / "backend"))
 _temp = tempfile.TemporaryDirectory(prefix="dsi-test-")
 os.environ["DSI_DATABASE_PATH"] = str(Path(_temp.name) / "test.db")
 
-from fastapi.testclient import TestClient
+from auth_test_client import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").json()["version"] == "0.18.0"
+assert client.get("/health").json()["version"] == "1.0.0"
 
 payload = {
     "title": "Produto de teste DSI",

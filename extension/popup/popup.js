@@ -1,4 +1,5 @@
 const API_BASE = "http://127.0.0.1:8000";
+let pairingToken = "";
 const $ = id => document.getElementById(id);
 const apiStatus = $("api-status");
 const pageStatus = $("page-status");
@@ -26,7 +27,7 @@ async function api(path, options = {}) {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       signal: controller.signal,
-      headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) }
+      headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}), "X-DSI-Token": pairingToken }
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -45,16 +46,19 @@ async function api(path, options = {}) {
 async function checkBackend() {
   try {
     const data = await api("/health");
+    if (!pairingToken) throw new Error("Informe a chave de conexão.");
+    await api("/monitoring/summary");
     apiStatus.textContent = `API conectada · v${data.version || "?"}`;
     apiStatus.className = "status status-ok";
     backendAvailable = true;
     $("connection-help").hidden = true;
   } catch (_) {
-    apiStatus.textContent = "API desconectada · abra Iniciar DSI.bat";
+    apiStatus.textContent = pairingToken ? "Sem conexão · confira a chave e o servidor" : "API não pareada · copie a chave no dashboard";
     apiStatus.className = "status status-error";
     backendAvailable = false;
     $("connection-help").hidden = false;
   }
+  $("pair-status").textContent = backendAvailable ? "Conectado" : (pairingToken ? "Chave inválida ou API offline" : "Não pareado");
   updateCaptureState();
   updateListingState();
   return backendAvailable;
@@ -332,6 +336,24 @@ $("refresh-listing-button").addEventListener("click", async () => {
 $("refresh-button").addEventListener("click", refreshAll);
 $("retry-button").addEventListener("click", refreshAll);
 
+$("pair-save").addEventListener("click", async () => {
+ const token = $("pair-token").value.trim();
+ if (!/^[a-f0-9]{64}$/.test(token)) { $("pair-feedback").textContent="Chave inválida. Copie a chave completa em Configurações."; return; }
+ pairingToken=token;
+ if (await checkBackend()) {
+   await browser.storage.local.set({ dsiPairingToken: token });
+   $("pair-token").value="";
+   $("pair-feedback").textContent="Conectado com sucesso.";
+   await Promise.all([loadMonitoring(),loadAlerts()]);
+ } else { pairingToken=""; $("pair-feedback").textContent="Não foi possível validar. Confira a chave e inicie o DSI."; }
+});
+$("pair-remove").addEventListener("click", async () => {
+ pairingToken=""; await browser.storage.local.remove("dsiPairingToken");
+ $("pair-token").value=""; $("pair-feedback").textContent="Pareamento removido.";
+ await checkBackend();
+});
 (async () => {
-  await Promise.all([refreshAll(), inspectPage()]);
+ const saved=await browser.storage.local.get("dsiPairingToken");
+ pairingToken=saved.dsiPairingToken||"";
+ await Promise.all([refreshAll(), inspectPage()]);
 })();

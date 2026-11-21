@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 with tempfile.TemporaryDirectory(prefix="dsi-cooldown-") as folder:
     os.environ["DSI_DATABASE_PATH"] = str(Path(folder) / "test.db")
-    from fastapi.testclient import TestClient
+    from auth_test_client import TestClient
     from sqlalchemy import select
     import main
     from models import Product, PriceHistory

@@ -1,7 +1,7 @@
 """Verifica novos campos, regras de segurança do navegador e ferramentas do banco."""
 import os, sys, tempfile, sqlite3, csv, io
 from pathlib import Path
-from fastapi.testclient import TestClient
+from auth_test_client import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as tmp:
     dbpath = Path(tmp)/'dsi.db'
@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory() as tmp:
     sys.path.insert(0,str(ROOT/'backend'))
     import main
     client=TestClient(main.app)
-    assert client.get('/health').json()['version']=='0.18.0'
+    assert client.get('/health').json()['version']=='1.0.0'
     payload={'title':'Capa X','url':'https://www.aliexpress.com/item/1005001234567890.html',
              'image_url':'https://ae01.alicdn.com/a.jpg','image_urls':['https://ae01.alicdn.com/a.jpg','https://ae01.alicdn.com/b.jpg'],
              'seller_name':'Loja X','seller_url':'https://www.aliexpress.com/store/123456',
