@@ -11,13 +11,15 @@
     <header>
       <div class="logo" aria-hidden="true">DSI</div>
       <div class="brand"><h1>Dropshipping Intelligence</h1><p>Garimpo inteligente de produtos</p></div>
-      <span class="version">0.11.0</span>
+      <span class="version">0.18.0</span>
     </header>
 
     <div class="topline">
       <div id="api-status" class="status status-checking" role="status">Verificando API...</div>
       <button id="retry-button" class="text-button" type="button">Reconectar</button>
     </div>
+
+    <div id="connection-help" class="connection-help" hidden>Abra <strong>Iniciar DSI.bat</strong> na pasta do DSI. Se não funcionar, execute <strong>Diagnosticar DSI.bat</strong>. Depois clique em <strong>Reconectar</strong>.</div>
 
     <section class="panel current-panel" aria-labelledby="current-heading">
       <div class="section-heading"><h2 id="current-heading">Produto nesta página</h2><span id="page-badge" class="badge">Verificando</span></div>
@@ -30,11 +32,12 @@
 
     <section class="panel collection-panel">
       <div class="section-heading"><h2>Sessão de garimpo</h2><span id="listing-badge" class="badge">Aguardando página</span></div>
+      <button id="refresh-listing-button" class="text-button" type="button">Atualizar lista após rolar</button>
       <p id="listing-status" class="muted">Abra uma página de busca ou categoria do AliExpress para identificar produtos visíveis.</p>
       <div id="listing-preview" class="listing-preview" hidden></div>
       <button id="collect-listing-button" type="button" disabled>Coletar produtos desta página</button>
       <p id="collection-feedback" role="status" aria-live="polite" class="feedback"></p>
-      <p class="muted note">Coleta somente itens já carregados na página aberta (máximo de 40 por sessão). Não navega automaticamente nem contorna controles do site.</p>
+      <p class="muted note">Coleta até 40 itens elegíveis por sessão. Itens coletados em lote ficam bloqueados por 24h; role a página e atualize para captar os próximos. Não navega automaticamente nem contorna controles do site.</p>
     </section>
 
     <section class="panel history-panel" id="history-panel" hidden>

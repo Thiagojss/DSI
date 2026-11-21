@@ -11,6 +11,8 @@ let currentTab = null;
 let previewProduct = null;
 let isCapturing = false;
 let listingProducts = [];
+let listingCandidates = [];
+const BATCH_SIZE = 40;
 
 function showFeedback(message, type = "") {
   feedback.textContent = message;
@@ -46,10 +48,12 @@ async function checkBackend() {
     apiStatus.textContent = `API conectada · v${data.version || "?"}`;
     apiStatus.className = "status status-ok";
     backendAvailable = true;
+    $("connection-help").hidden = true;
   } catch (_) {
-    apiStatus.textContent = "API desconectada · inicie o servidor";
+    apiStatus.textContent = "API desconectada · abra Iniciar DSI.bat";
     apiStatus.className = "status status-error";
     backendAvailable = false;
+    $("connection-help").hidden = false;
   }
   updateCaptureState();
   updateListingState();
@@ -103,12 +107,50 @@ function renderPreview(product) {
   const seller = document.createElement("span");
   seller.textContent = product.seller_name ? `Vendedor: ${product.seller_name}` : "Vendedor não identificado";
   details.append(price, seller);
+  if (product.image_urls?.length > 1) {
+    const photos = document.createElement('span');
+    photos.textContent = `${product.image_urls.length} imagens do anúncio`;
+    details.append(photos);
+  }
+  if (product.seller_rating != null || product.seller_positive_feedback_pct != null) {
+    const sellerQuality = document.createElement('span');
+    sellerQuality.textContent = [product.seller_rating != null ? `Nota da loja: ${product.seller_rating}/5` : null,
+      product.seller_positive_feedback_pct != null ? `Feedback positivo: ${product.seller_positive_feedback_pct}%` : null].filter(Boolean).join(' · ');
+    details.append(sellerQuality);
+  }
   container.append(title, details);
+}
+
+async function refreshListingCandidates() {
+  const result = await browser.tabs.sendMessage(currentTab.id, { action: "DSI_COLLECT_LISTING" });
+  if (result?.error) throw new Error(result.error);
+  listingCandidates = Array.isArray(result?.products) ? result.products : [];
+  // Consultas paginadas evitam limite do endpoint; processa toda a lista presente no DOM.
+  const blockedIds = new Set();
+  if (backendAvailable) {
+    for (let i = 0; i < listingCandidates.length; i += 1500) {
+      const slice = listingCandidates.slice(i, i + 1500);
+      const response = await api("/collection-eligibility", {
+        method: "POST", body: JSON.stringify({ product_ids: slice.map(p => p.source_product_id).filter(Boolean) })
+      });
+      (response.blocked_ids || []).forEach(id => blockedIds.add(id));
+    }
+  }
+  const eligible = listingCandidates.filter(p => p.source_product_id && !blockedIds.has(p.source_product_id));
+  listingProducts = eligible.slice(0, BATCH_SIZE);
+  const listingStatus = $("listing-status"), listingBadge = $("listing-badge"), listingPreview = $("listing-preview");
+  listingStatus.textContent = `${listingCandidates.length} itens carregados · ${blockedIds.size} bloqueados por 24h · ${eligible.length} elegíveis · próximo lote: ${listingProducts.length}.` +
+    (eligible.length === 0 ? " Role a página para carregar mais anúncios e clique em Atualizar lista." : "");
+  listingBadge.textContent = `${eligible.length} disponíveis`;
+  listingPreview.hidden = !listingProducts.length;
+  listingPreview.textContent = listingProducts.slice(0, 5).map((p, i) => `${i+1}. ${p.title}`).join("\n") +
+    (listingProducts.length > 5 ? `\n… e mais ${listingProducts.length-5} neste lote` : "");
+  updateListingState();
 }
 
 async function inspectPage() {
   currentTab = await getActiveTab().catch(() => null);
-  previewProduct = null; listingProducts = [];
+  previewProduct = null; listingProducts = []; listingCandidates = [];
   const listingStatus = $("listing-status"), listingBadge = $("listing-badge"), listingPreview = $("listing-preview");
   listingPreview.hidden = true; listingPreview.textContent = "";
   if (!currentTab?.id || !/aliexpress\.com$/i.test(new URL(currentTab.url || "https://invalid/").hostname) && !/\.aliexpress\.com$/i.test(new URL(currentTab.url || "https://invalid/").hostname)) {
@@ -132,13 +174,7 @@ async function inspectPage() {
     pageStatus.textContent = "Esta é uma listagem. Use a sessão de garimpo abaixo para coletar os produtos visíveis.";
     pageBadge.textContent = "Página de listagem"; pageBadge.className = "badge ready";
     try {
-      const result = await browser.tabs.sendMessage(currentTab.id, { action: "DSI_COLLECT_LISTING" });
-      if (result?.error) throw new Error(result.error);
-      listingProducts = Array.isArray(result?.products) ? result.products : [];
-      listingStatus.textContent = listingProducts.length ? `${listingProducts.length} produto(s) identificados. A prévia inclui somente os itens carregados nesta página.` : "Nenhum produto reconhecido. Role a página para carregar mais itens ou tente outra listagem.";
-      listingBadge.textContent = `${listingProducts.length} encontrados`;
-      listingPreview.hidden = false;
-      listingPreview.textContent = listingProducts.slice(0,5).map((item,i)=>`${i+1}. ${item.title}${item.price!=null?` · ${item.price} ${item.currency||""}`:""}`).join("\n") + (listingProducts.length>5?`\n… e mais ${listingProducts.length-5}`:"");
+      await refreshListingCandidates();
     } catch (error) { listingStatus.textContent = error.message || "Atualize a aba do AliExpress e tente novamente."; listingBadge.textContent = "Falha na leitura"; }
   }
   updateCaptureState(); updateListingState();
@@ -264,20 +300,35 @@ captureButton.addEventListener("click", async () => {
 });
 
 collectListingButton.addEventListener("click", async () => {
-  if (isCapturing || !listingProducts.length || !backendAvailable || !currentTab?.url) return;
+  if (isCapturing || !backendAvailable || !currentTab?.url) return;
   isCapturing = true; collectListingButton.textContent = "Coletando..."; updateCaptureState(); updateListingState();
   $("collection-feedback").textContent = "Enviando lote para validação e deduplicação no DSI...";
   try {
+    // Reconsulta no clique para evitar enviar um lote obsoleto após a rolagem.
+    await refreshListingCandidates();
+    if (!listingProducts.length) {
+      $("collection-feedback").textContent = "Nenhum produto elegível neste momento. Role a página e atualize a lista.";
+      return;
+    }
     const result = await api("/collection-sessions", { method: "POST", body: JSON.stringify({ source_url: currentTab.url, products: listingProducts }) });
-    $("collection-feedback").textContent = `Sessão #${result.session_id} concluída: ${result.saved_new} novos, ${result.updated} atualizados e ${result.skipped} ignorados.`;
+    $("collection-feedback").textContent = `Sessão #${result.session_id}: ${result.saved_new} novos, ${result.updated} atualizados, ${result.cooldown_skipped || 0} bloqueados por 24h e ${result.skipped} ignorados no total.`;
     $("collection-feedback").className = "feedback success";
     await loadMonitoring();
+    try { await refreshListingCandidates(); } // próximo lote sem reabrir o popup
+    catch (refreshError) { $("listing-status").textContent = "Lote salvo. Atualize a lista para continuar."; }
   } catch (error) {
     $("collection-feedback").textContent = error.message || "Não foi possível concluir a sessão.";
     $("collection-feedback").className = "feedback error";
   } finally { isCapturing = false; collectListingButton.textContent = "Coletar produtos desta página"; updateCaptureState(); updateListingState(); }
 });
 
+$("refresh-listing-button").addEventListener("click", async () => {
+  if (isCapturing || !currentTab?.id || isAliExpressProduct(currentTab.url || "")) return;
+  $("refresh-listing-button").disabled = true;
+  try { await refreshListingCandidates(); }
+  catch (error) { $("listing-status").textContent = error.message || "Erro ao reler os itens."; }
+  finally { $("refresh-listing-button").disabled = false; }
+});
 $("refresh-button").addEventListener("click", refreshAll);
 $("retry-button").addEventListener("click", refreshAll);
 

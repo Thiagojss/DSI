@@ -1,0 +1,10 @@
+const fs = require('fs'), assert = require('assert');
+const html = fs.readFileSync('dashboard/index.html','utf8');
+for(const id of ['catalogGroups','organizationFilter','bulkOrganizerModal','openBulkOrganizer','bulkCategorySuggestions','bulkColorChoices','catalogSelection']) assert(html.includes(`id="${id}"`),`Ausente: ${id}`);
+assert(html.includes("state==='organized'&&!!p.manual_category"));
+assert(html.includes('const list=catalogFiltered()'));
+assert(html.includes("/products/organization/bulk"));
+assert(!html.includes('id="bulkCategory" placeholder="Ex.:'), 'Formulário antigo ainda visível no catálogo');
+const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);
+assert.equal(ids.length,new Set(ids).size,'IDs HTML duplicados');
+console.log('OK: filtros pessoais, navegação, seleção em blocos, modal único e IDs sem duplicação.');

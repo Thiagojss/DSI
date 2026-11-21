@@ -67,6 +67,66 @@
     return { category: unique.at(-1) || null, category_path: unique };
   }
 
+  // Somente imagens vinculadas ao produto: galeria/miniaturas e metadados.
+  // Nunca coleta imagens de recomendações ou da página inteira.
+  function safeImage(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    try {
+      const url = new URL(raw.trim(), location.href);
+      if (!['https:', 'http:'].includes(url.protocol)) return null;
+      if (/^(?:localhost|127\.|0\.0\.0\.0)/i.test(url.hostname)) return null;
+      return url.href;
+    } catch (_) { return null; }
+  }
+
+  function productImages(json) {
+    const pool = [];
+    const add = raw => {
+      const url = safeImage(typeof raw === 'object' ? raw?.url : raw);
+      if (url && !pool.includes(url) && pool.length < 16) pool.push(url);
+    };
+    add(meta('meta[property="og:image"]'));
+    const images = Array.isArray(json?.image) ? json.image : (json?.image ? [json.image] : []);
+    images.forEach(add);
+    const selectors = [
+      '[class*="image-view" i] img', '[class*="image-gallery" i] img',
+      '[class*="slider--img" i] img', '[class*="magnifier" i] img',
+      '[data-pl*="product-image" i] img', '[class*="product-image" i] img',
+      '[class*="thumbnail" i] img'
+    ];
+    for (const node of document.querySelectorAll(selectors.join(','))) {
+      if (pool.length >= 16) break;
+      const srcset = node.getAttribute('data-src') || node.getAttribute('data-lazy-src') || node.currentSrc || node.getAttribute('src');
+      add(srcset);
+    }
+    return pool;
+  }
+
+  function supplierInfo(json) {
+    const root = document.querySelector('[class*="store-header" i], [class*="shop-header" i], [data-pl*="store" i]');
+    const links = [
+      ...document.querySelectorAll('a[href*="/store/"], a[href*="/store/index"], a[href*="/store/storeHome"], a[href*="/store/home"]')
+    ];
+    if (root) links.unshift(...root.querySelectorAll('a[href]'));
+    const sellerUrl = links.map(node => {
+      try {
+        const u = new URL(node.href, location.href);
+        return (u.protocol === 'https:' && /(^|\.)aliexpress\.com$/i.test(u.hostname) && /\/store\//i.test(u.pathname)) ? u.href : null;
+      } catch (_) { return null; }
+    }).find(Boolean) || null;
+    // Notas do vendedor nunca são inferidas da nota do produto.
+    const specific = document.querySelector('[class*="store-rating" i], [class*="seller-rating" i], [data-pl*="seller-rating" i]');
+    const ratingText = [specific?.getAttribute('aria-label'), specific?.textContent].filter(Boolean).join(' ');
+    const numeric = ratingText.match(/(?:rating|nota|avaliação)?\s*[:：]?\s*([0-5](?:[.,]\d{1,2})?)\s*(?:\/\s*5|stars?|estrelas?)/i);
+    const sellerRating = numeric ? toNumber(numeric[1]) : null;
+    const feedbackNode = document.querySelector('[class*="positive-feedback" i], [class*="positive-rate" i], [data-pl*="positive-feedback" i]');
+    const feedback = (feedbackNode?.textContent || '').match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*%/);
+    const positive = feedback ? toNumber(feedback[1]) : null;
+    return { seller_url: sellerUrl,
+      seller_rating: sellerRating != null && sellerRating <= 5 ? sellerRating : null,
+      seller_positive_feedback_pct: positive != null && positive <= 100 ? positive : null };
+  }
+
   function captureProduct() {
     const sourceProductId = productIdFromUrl();
     if (!sourceProductId) throw new Error("Esta não é uma página individual de produto. Abra um endereço /item/ID.html.");
@@ -118,6 +178,8 @@
       text('[class*="shop-name"]'), text('[data-pl="store-name"]')
     );
     const image = first(meta('meta[property="og:image"]'), json?.image?.url, Array.isArray(json?.image) ? json.image[0] : json?.image);
+    const gallery = productImages(json);
+    const supplier = supplierInfo(json);
     const category = categoryData();
     const description = first(meta('meta[property="og:description"]'), meta('meta[name="description"]'), json?.description);
     const discountBadge = (document.body?.innerText || "").match(/(?:-\s*)?(\d{1,3})\s*%\s*(?:OFF|desconto|de desconto)/i);
@@ -127,7 +189,7 @@
 
     return {
       source: "aliexpress", title, url: location.href, source_product_id: sourceProductId,
-      image_url: image, price, currency, rating,
+      image_url: safeImage(image) || gallery[0] || null, image_urls: gallery, ...supplier, price, currency, rating,
       review_count: reviewCount != null ? Math.round(reviewCount) : null,
       orders_count: ordersCount, seller_name: seller, description,
       discount_percent: discountPercent, shipping_text: shippingText, delivery_text: deliveryText,
@@ -220,8 +282,21 @@
       const originalPrice = originalCurrency && originalCurrency === currency ? toNumber(originalValue[0]) : null;
       const shippingText = cardText.match(/(?:frete gr[aá]tis|envio gr[aá]tis|free shipping|shipping free|frete de\s*(?:R\$|US\$)\s*[\d.,]+)/i)?.[0] || null;
       const deliveryText = clean(card.querySelector('[class*="delivery-time" i], [class*="estimated-delivery" i], [data-pl*="delivery"]')?.textContent)?.slice(0,160) || null;
-      const result = { source: "aliexpress", title: title.slice(0, 1000), url: `https://www.aliexpress.com/item/${id}.html`,
-        image_url: image && /^https?:/i.test(image) ? image : null, price, currency,
+      const sellerRatingNode = card.querySelector('[class*="store-rating" i], [class*="seller-rating" i]');
+      const sellerRatingLabel = [sellerRatingNode?.getAttribute('aria-label'), sellerRatingNode?.getAttribute('title'), sellerRatingNode?.textContent].filter(Boolean).join(' ');
+      const sellerRatingMatch = sellerRatingLabel.match(/([0-5](?:[.,]\d{1,2})?)\s*(?:\/\s*5|stars?|estrelas?)/i);
+      const sellerRating = sellerRatingMatch ? toNumber(sellerRatingMatch[1]) : null;
+      const positiveFeedbackNode = card.querySelector('[class*="positive-feedback" i], [class*="positive-rate" i]');
+      const positiveFeedbackMatch = (positiveFeedbackNode?.textContent || '').match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*%/);
+      const positiveFeedback = positiveFeedbackMatch ? toNumber(positiveFeedbackMatch[1]) : null;
+      const sellerLinkNode = card.querySelector('a[href*="/store/"]');
+      let sellerUrl = null;
+      try { const u = new URL(sellerLinkNode?.href || '', location.href);
+        if (u.protocol === 'https:' && /(^|\.)aliexpress\.com$/i.test(u.hostname) && /\/store\//.test(u.pathname)) sellerUrl = u.href;
+      } catch (_) { /* link não disponível */ }
+      const result = { source: "aliexpress", source_product_id: id, title: title.slice(0, 1000), url: `https://www.aliexpress.com/item/${id}.html`,
+        image_url: safeImage(image), image_urls: safeImage(image) ? [safeImage(image)] : [], seller_url: sellerUrl,
+        seller_rating: sellerRating, seller_positive_feedback_pct: positiveFeedback, price, currency,
         ...metrics, seller_name: seller, original_price: originalPrice, discount_percent: discountPercent,
         shipping_text: shippingText, delivery_text: deliveryText,
         category: category.category, category_path: category.category_path,
@@ -230,7 +305,7 @@
       const previous = found.get(id);
       const completeness = item => ["price", "rating", "review_count", "orders_count", "image_url"].filter(k => item[k] != null).length;
       if (!previous || completeness(result) > completeness(previous)) found.set(id, result);
-      if (found.size >= 40) break;
+      // Sem limite de 40 na descoberta: o limite passa a ser apenas no envio de cada lote.
     }
     return [...found.values()];
   }

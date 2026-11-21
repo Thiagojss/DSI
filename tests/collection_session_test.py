@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import main
 
 client = TestClient(main.app)
-assert client.get("/health").json()["version"] == "0.11.0"
+assert client.get("/health").json()["version"] == "0.18.0"
 
 base = {
     "title": "Luminária LED de teste",
@@ -29,14 +29,14 @@ response = client.post("/collection-sessions", json={
 assert response.status_code == 200, response.text
 result = response.json()
 assert result["total_found"] == 2
-assert result["saved_new"] == 1 and result["updated"] == 1 and result["skipped"] == 0
-assert result["status"] == "completed"
+assert result["saved_new"] == 1 and result["updated"] == 0 and result["skipped"] == 1
+assert result["status"] == "partial"
 products = client.get("/products?limit=20").json()
-assert len(products) == 1 and products[0]["title"] == "Luminária LED atualizada"
+assert len(products) == 1 and products[0]["title"] == "Luminária LED de teste"
 history = client.get(f"/products/{products[0]['id']}/history").json()
-assert len(history) == 2
+assert len(history) == 1
 sessions = client.get("/collection-sessions").json()
-assert len(sessions) == 1 and sessions[0]["saved_new"] == 1 and sessions[0]["updated"] == 1
+assert len(sessions) == 1 and sessions[0]["saved_new"] == 1 and sessions[0]["updated"] == 0
 invalid = client.post("/collection-sessions", json={
     "source_url": "https://example.com/search", "products": [base]
 })
@@ -68,5 +68,5 @@ assert isolated.json()["skipped"] == 1 and isolated.json()["saved_new"] == 1
 assert any(p["title"] == "Luminária preservada" for p in client.get("/products?limit=20").json())
 main.upsert_product = original_upsert
 
-print("OK: lote, deduplicação, atualização, histórico, isolamento de falhas, rejeição de origem e registro de itens ignorados.")
+print("OK: lote, bloqueio de duplicatas, histórico, isolamento de falhas, rejeição de origem e registro de itens ignorados.")
 _temp.cleanup()

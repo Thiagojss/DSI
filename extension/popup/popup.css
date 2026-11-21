@@ -52,3 +52,5 @@ footer a:hover { text-decoration: underline; }
 [hidden] { display: none !important; }
 
 .listing-preview{white-space:pre-line;max-height:116px;overflow:auto;background:#f7f8fa;border:1px solid #e8ebf0;border-radius:8px;padding:9px;font-size:11px;line-height:1.55;color:#4e596b;margin:9px 0}.collection-panel .note{margin-top:8px}.collection-panel button{width:100%}
+
+.connection-help{margin:-3px 0 10px;padding:10px 12px;border:1px solid #f1d3a5;background:#fff9ee;border-radius:9px;font-size:11px;line-height:1.5;color:#785214}

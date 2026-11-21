@@ -1,3 +1,54 @@
+## v0.18.0 — Auditoria, imagens e fornecedor
+- Campos de galeria (até 16 URLs), link da loja e avaliações específicas da loja, sem confundir com nota do anúncio.
+- Coleta dos dados existentes em DOM/JSON-LD; não percorre sites automaticamente. Campos ausentes permanecem nulos.
+- Nova migração aditiva com backup consistente antes de novas colunas.
+- Settings: backup manual, exportação CSV com proteção contra fórmulas e verificação de integridade SQLite.
+- Bloqueio de requisições de escrita de origens web externas e cabeçalhos de segurança básicos. Isso **não substitui autenticação**: API local ainda precisa de mecanismo de pareamento antes da publicação.
+- Testes automatizados para persistência, migração, exportação e bloqueio de origem.
+
+## v0.18.0 — organização por blocos e filtros pessoais
+- Navegação lateral por categorias pessoais com contadores.
+- Filtros por organizado, não organizado, favoritos e cor.
+- Seleção preservada entre filtros e menu modal para aplicar categoria/cor em até 200 produtos.
+- Sem migrações: reutiliza o endpoint atômico existente.
+- Diagnóstico de qualidade recolhível para reduzir ruído.
+
+## v0.16.0 — Experiência de instalação e diagnóstico
+- Iniciadores `.bat` para Windows: primeira instalação isolada em `.venv` e inicialização subsequente em um clique.
+- Iniciador Python padrão com verificação de dependências, detecção de porta ocupada, prevenção de segunda instância, abertura do painel e bind exclusivo em `127.0.0.1`.
+- Diagnóstico sem inicialização do banco (Python, dependências, porta, saúde da API); instruções de recuperação.
+- Popup oferece orientação contextual quando o servidor não responde.
+- API, manifesto, painel e testes atualizados para v0.16.0. Sem alterações no schema do banco.
+- Limite: não é instalador nativo nem pacote AMO pronto para publicação; revisão de segurança pendente.
+
+## v0.15.0 — Oportunidades explicáveis
+- Ranking por categoria com margens simuladas, estresse e lacunas de evidência.
+- Endpoint GET /intelligence/opportunities.
+- Nenhum dado de demanda ou equivalência de produtos é inferido.
+- Mantém a v0.14 e banco sem migração.
+
+## v0.14.0 — Auditoria de cobertura e edição em lote (2026-11-21)
+
+- Endpoint de qualidade da coleta por campo/categoria.
+- Organização em lote com atualização atômica de categoria e cor.
+- Mantidos dados anteriores e esquema do banco.
+
+## v0.13.0 — Garimpo progressivo com intervalo de 24 horas (2026-11-21)
+- A extensão varre todos os cards já carregados no DOM e seleciona até 40 IDs elegíveis por sessão.
+- O servidor bloqueia novas capturas em lote do mesmo ID durante 24 horas; vale para outras buscas/categorias.
+- Endpoint `POST /collection-eligibility` permite ignorar previamente IDs bloqueados antes do envio.
+- O popup atualiza automaticamente o próximo lote após salvar; botão manual para reler após rolagem.
+- Coluna `last_batch_collected_at` adicionada por migração aditiva; capturas individuais permanecem independentes.
+- O lote é verificado novamente no servidor; itens bloqueados não geram atualizações nem histórico.
+- Sem rolagem automática, sem contorno de controles de acesso.
+
+## v0.12.0 — Configurações / limpeza segura (2026-11-21)
+- Nova seção **Configurações (Settings)** com indicadores de registros do banco.
+- Limpeza sob confirmação digitada (LIMPAR PRODUTOS), com backup consistente SQLite obrigatório antes da transação.
+- Exclusão de produtos e registros associados (histórico, alertas, custos, sessões), preservando banco, tabelas, índices e migrações.
+- Interface atualiza os painéis após a limpeza; backups salvos em `data/backups/`.
+- Não exclui cache de câmbio ou outras tabelas não relacionadas ao catálogo.
+
 ## 0.11.0 — Catálogo organizado pelo usuário
 
 - Renomeação de itens, categorias próprias e cores de borda persistentes em produtos.

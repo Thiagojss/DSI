@@ -21,6 +21,10 @@ class Product(Base):
     border_color = Column(String(7), nullable=True)
     url = Column(String(2048), nullable=False, unique=True, index=True)
     image_url = Column(String(2048), nullable=True)
+    image_urls_json = Column(Text, nullable=True)
+    seller_url = Column(String(2048), nullable=True)
+    seller_rating = Column(Float, nullable=True)
+    seller_positive_feedback_pct = Column(Float, nullable=True)
     price = Column(Float, nullable=True)
     price_min = Column(Float, nullable=True)
     price_max = Column(Float, nullable=True)
@@ -39,6 +43,7 @@ class Product(Base):
     is_favorite = Column(Boolean, nullable=False, default=False, index=True)
     capture_warnings = Column(Text, nullable=True)
     collected_at = Column(DateTime(timezone=True), nullable=True)
+    last_batch_collected_at = Column(DateTime(timezone=True), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 

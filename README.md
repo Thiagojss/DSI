@@ -1,3 +1,34 @@
+### Novidades v0.18.0
+A página individual pode coletar uma galeria limitada a 16 imagens expostas no HTML/JSON-LD, link da loja e, quando explicitamente rotulada, a nota/feedback do fornecedor. Esses dados são exibidos no catálogo e não devem ser confundidos com as avaliações do anúncio. Em **Configurações**, há exportação CSV, backup manual e verificação de integridade SQLite.
+
+**Ainda não pronto para publicação pública**: validação real Firefox/AliExpress, pareamento/autenticação da API local e revisão das permissões do navegador continuam pendentes.
+
+# v0.18.0 — Início simplificado e diagnóstico local
+
+O DSI continua com **aplicativo local Python/FastAPI + SQLite + extensão Firefox**. No Windows, execute `Instalar e iniciar DSI.bat` apenas na primeira instalação; depois use `Iniciar DSI.bat`. O iniciador abre o painel, usa somente `127.0.0.1:8000`, evita duas instâncias e não altera `data/dsi.db` diretamente. `Diagnosticar DSI.bat` verifica Python, dependências, servidor e porta sem iniciar a API. Veja **SOLUCAO_DE_PROBLEMAS.md** para passos detalhados.
+
+A janela de terminal deve permanecer aberta durante o uso. Esta versão não é um EXE assinado e ainda requer Python na máquina. A API local ainda não possui autenticação; não a exponha à internet. O Firefox requer carregamento temporário da extensão de desenvolvimento até a preparação da distribuição pública.
+
+## v0.14.0 — Qualidade de coleta e organização em lote
+
+- `GET /intelligence/collection-quality?category=...`: cobertura objetiva de 10 campos, por categoria.
+- `PUT /products/organization/bulk`: altera categoria e/ou cor de até 200 produtos, sem modificar nomes.
+- Campos `apply_category` e `apply_color` precisam ser explicitamente ativados; valores `null` restauram o campo original.
+- A operação é atômica: se algum ID não existir, nenhum produto é alterado.
+- Não modifica o esquema SQLite nem apaga dados existentes.
+- **Pré-publicação:** ainda exige revisão de permissões, consentimento e segurança do servidor local. Não publicar o pacote de desenvolvimento diretamente no AMO.
+
+## v0.13.0 — Coleta progressiva, cooldown de 24 horas
+
+1. Abra uma listagem do AliExpress e clique em **Coletar produtos desta página**. A extensão verifica **todos os cards já presentes no DOM**, não apenas os primeiros 40.
+2. O lote contém **até 40 IDs não coletados em lote nas últimas 24 horas**. Após salvar, o popup apresenta automaticamente os próximos elegíveis.
+3. Ao rolar a página do AliExpress, clique em **Atualizar lista após rolar** para reconhecer os anúncios recém-carregados. Não há scroll automático.
+4. O bloqueio usa o **ID do AliExpress**, independente de qual categoria ou busca foi usada, e o prazo é de 24 horas corridas desde a captura em lote bem-sucedida.
+5. O banco distingue recapturas individuais e sessões em lote; o cooldown **só restringe a coleta em lote**. Sessões rejeitadas pelo cooldown não atualizam produto nem histórico.
+6. Backend: `POST /collection-eligibility` para consultar IDs bloqueados; `POST /collection-sessions` também verifica o bloqueio de forma autoritativa. Uma migração aditiva cria `last_batch_collected_at` com backup consistente prévio em `data/backups/` quando necessário.
+
+**Limite real:** o leitor não força novos anúncios a aparecer: somente reconhece cards que o site já carregou e ainda mantém no DOM. Páginas com virtualização podem descarregar cards antigos. A contagem de 40 é por envio, não por rolagem ou por dia. Produtos anteriores à v0.13 não possuem histórico de cooldown e, portanto, tornam-se elegíveis para a primeira coleta em lote após a atualização.
+
 ## v0.11.0 — Organização manual e categorias mais confiáveis
 
 - No dashboard, clique em **Organizar** no card do produto, na tabela do Radar ou no comparador.
@@ -10,7 +41,7 @@
 
 **Atualização:** faça cópia de `data/dsi.db`, preserve a pasta `data` e atualize apenas arquivos de código. Reinicie a API e recarregue a extensão Firefox. Sem acesso a uma sessão real do AliExpress, a extração de categorias em páginas reais ainda precisa ser validada.
 
-# DSI — Dropshipping Intelligence 0.9.0
+# DSI — Dropshipping Intelligence 0.13.0
 
 Extensão Firefox + API Python local + painel web para garimpar, catalogar e analisar produtos do AliExpress, com favoritos persistentes, histórico de preços, alertas e sessões de coleta em lote.
 
@@ -38,7 +69,7 @@ Extensão Firefox + API Python local + painel web para garimpar, catalogar e ana
 ## Novidades da versão 0.8.0 — Sessões automatizadas de coleta
 
 - Na extensão Firefox, abra uma página de busca/categoria do AliExpress e use **Sessão de garimpo**.
-- A extensão identifica até 40 produtos visíveis/carregados na página, apresenta uma prévia e envia o lote ao backend.
+- A extensão examina os produtos já carregados na página, consulta quais estão bloqueados por 24h e envia até 40 elegíveis por lote. Após rolar, use **Atualizar lista após rolar**.
 - O backend valida URLs e dados, deduplica pelo ID do AliExpress e atualiza produtos já existentes.
 - Cada lote gera um registro persistente em `collection_sessions`, com totais encontrados, novos, atualizados e ignorados.
 - O dashboard ganhou a área **Coleta automatizada**, com instruções e histórico das sessões.
@@ -185,3 +216,15 @@ O menu **Custos e margens** permite selecionar um item do catálogo, preencher u
 - `GET /intelligence/costs` — análises registradas para comparação por categoria.
 
 **Atualização:** faça backup da pasta `data`; substitua os arquivos do projeto, **nunca substitua ou delete o banco**; reinicie a API e recarregue a extensão no Firefox. Os endpoints anteriores permanecem. Testes `python tests/cost_analysis_test.py` e regressões existentes. O banco do usuário não acompanha o ZIP.
+
+
+### Configurações — limpar produtos (v0.12.0)
+No dashboard, abra **Configurações > Limpar produtos**, leia o aviso e digite `LIMPAR PRODUTOS`. O DSI cria um backup SQLite consistente em `data/backups/` antes da exclusão. São removidos produtos, nomes/categorias/cores manuais, favoritos, históricos, alertas, cenários de custo e sessões de coleta. O arquivo `data/dsi.db` e o esquema são preservados, assim como dados não relacionados ao catálogo (ex.: câmbio). **Não apague o diretório de backups** se desejar recuperar os dados depois. O backup não é restaurado automaticamente pela interface. Use somente em uma API local confiável; não exponha a porta 8000 publicamente.
+
+
+### v0.15 — Oportunidades
+Abra **Oportunidades** no dashboard para comparar anúncios de uma mesma categoria. A classificação usa margens de cenários financeiros salvos e não prevê vendas. Configure frete e preço de venda em **Custos & margens**.
+
+
+### Organização em blocos (v0.17)
+Abra Produtos, filtre ou clique numa categoria em Minhas categorias, selecione os cards e escolha Organizar selecionados. Digite ou escolha categoria pessoal, marque os campos a alterar e salve. Uma seleção pode ter até 200 itens; ela permanece ao trocar filtros. A navegação considera os 500 produtos carregados mais recentes; para catálogos maiores, a paginação deverá ser ampliada numa versão futura.
